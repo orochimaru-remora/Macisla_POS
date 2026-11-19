@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { startServer } from '../server.js';
 import { onRequest } from '../functions/[[path]].js';
+import { onRequest as authMiddleware } from '../functions/_middleware.js';
 
 function createTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'macisla-pos-test-'));
@@ -308,4 +309,58 @@ test('Auto-login removes login wall, lands on #/sales/new, and auto-syncs edited
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('Cloudflare edge middleware protects pos.macisla.com via POS_ACCESS_KEY or Cloudflare Access', async () => {
+  const env = { POS_ACCESS_KEY: 'shop-secret-999' };
+  const passNext = async () => new Response('allowed', { status: 200 });
+
+  // 1. Unauthenticated browser & API requests are blocked with 401
+  const blockedPage = await authMiddleware({
+    request: new Request('https://pos.macisla.com/dashboard.html', { headers: { accept: 'text/html' } }),
+    env,
+    next: passNext,
+  });
+  assert.equal(blockedPage.status, 401);
+  assert.match(await blockedPage.text(), /Shop passcode/i);
+
+  const blockedApi = await authMiddleware({
+    request: new Request('https://pos.macisla.com/sales'),
+    env,
+    next: passNext,
+  });
+  assert.equal(blockedApi.status, 401);
+
+  // 2. Cloudflare Zero Trust Access header passes straight through
+  const cfAccessOk = await authMiddleware({
+    request: new Request('https://pos.macisla.com/dashboard.html', {
+      headers: { 'cf-access-authenticated-user-email': 'owner@macisla.com' },
+    }),
+    env,
+    next: passNext,
+  });
+  assert.equal(cfAccessOk.status, 200);
+
+  // 3. Valid passcode unlock sets 30-day HttpOnly cookie and unlocks subsequent requests
+  const unlockRes = await authMiddleware({
+    request: new Request('https://pos.macisla.com/__pos_unlock', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'shop-secret-999' }),
+    }),
+    env,
+    next: passNext,
+  });
+  assert.equal(unlockRes.status, 303);
+  const setCookie = unlockRes.headers.get('set-cookie') || '';
+  assert.match(setCookie, /macisla_pos_auth=/);
+  assert.match(setCookie, /HttpOnly/i);
+
+  const cookiePair = setCookie.split(';')[0];
+  const unlockedApi = await authMiddleware({
+    request: new Request('https://pos.macisla.com/sales', { headers: { cookie: cookiePair } }),
+    env,
+    next: passNext,
+  });
+  assert.equal(unlockedApi.status, 200);
 });

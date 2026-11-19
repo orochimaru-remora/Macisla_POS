@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { SYNC_COLLECTIONS } from './seed-data.mjs';
+import { SYNC_COLLECTIONS, computeSeedVersion } from './seed-data.mjs';
 
 const SYNC_SET = new Set(SYNC_COLLECTIONS);
 
@@ -86,6 +86,9 @@ export function createLocalStore(dataDir, { seedFilePath = null } = {}) {
     const tmpPath = `${seedFilePath}.tmp`;
     fs.writeFileSync(tmpPath, content, 'utf8');
     fs.renameSync(tmpPath, seedFilePath);
+    const now = new Date().toISOString();
+    const version = computeSeedVersion(snapshot);
+    stmtPut.run('meta', 'seed_version', JSON.stringify({ _id: 'seed_version', version, synced_at: now }), now, now);
   }
 
   return {
