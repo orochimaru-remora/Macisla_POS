@@ -61,6 +61,24 @@ function createD1Store(db, r2) {
         .bind(collection, String(id))
         .run();
     },
+    async replaceCollection(collection, docs) {
+      await ensureTable();
+      const now = new Date().toISOString();
+      if (collection !== 'meta') {
+        await db.prepare('DELETE FROM posnic_docs WHERE collection = ?').bind(collection).run();
+      }
+      for (const d of docs) {
+        const id = String(d._id || d.id);
+        await db
+          .prepare(
+            `INSERT INTO posnic_docs (collection, id, data, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(collection, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
+          )
+          .bind(collection, id, JSON.stringify(d), now, now)
+          .run();
+      }
+    },
     async putObject(key, arrayBuffer, contentType) {
       if (!r2) return null;
       await r2.put(key, arrayBuffer, { httpMetadata: { contentType } });

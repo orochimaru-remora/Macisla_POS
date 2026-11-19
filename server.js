@@ -42,7 +42,7 @@ function resolveStaticFile(urlPath) {
   if (clean.startsWith('/public/')) clean = clean.slice('/public'.length);
 
   // Never expose backend files or data directory over HTTP
-  const blocked = ['/server.js', '/storage.js', '/posnic-engine.mjs', '/package.json', '/wrangler.toml', '/schema.sql', '/_routes.json'];
+  const blocked = ['/server.js', '/storage.js', '/posnic-engine.mjs', '/seed-data.mjs', '/package.json', '/wrangler.toml', '/schema.sql', '/_routes.json'];
   if (blocked.includes(clean) || clean.startsWith('/functions/') || clean.startsWith('/data/') || clean.startsWith('/test/') || clean.startsWith('/.git')) {
     return null;
   }
@@ -55,8 +55,8 @@ function resolveStaticFile(urlPath) {
   return null;
 }
 
-export function startServer({ port = PORT, host = HOST, dataDir = DATA_DIR } = {}) {
-  const store = createLocalStore(dataDir);
+export function startServer({ port = PORT, host = HOST, dataDir = DATA_DIR, seedFilePath = null } = {}) {
+  const store = createLocalStore(dataDir, { seedFilePath });
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -108,8 +108,8 @@ export function startServer({ port = PORT, host = HOST, dataDir = DATA_DIR } = {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { server } = startServer();
+  const { server } = startServer({ seedFilePath: path.join(__dirname, 'seed-data.mjs') });
   server.listen(PORT, HOST, () => {
-    console.log(`Macisla_POS (Original Posnic UI + Cloudflare D1/R2 Adapter) listening on http://${HOST}:${PORT}`);
+    console.log(`Macisla_POS (Original Posnic UI + Cloudflare D1/R2 Adapter + Auto Seed Sync) listening on http://${HOST}:${PORT}`);
   });
 }

@@ -250,3 +250,62 @@ test('Cloudflare Pages Function (functions/[[path]].js) passes static assets to 
   assert.equal(body.type, 'success');
   assert.ok(body.data.kpis.total_sales > 0);
 });
+
+test('Auto-login removes login wall, lands on #/sales/new, and auto-syncs edited items/categories to seed-data.mjs', async () => {
+  const dir = createTempDir();
+  const tempSeedPath = path.join(dir, 'seed-data.mjs');
+  const { server } = startServer({ port: 0, host: '127.0.0.1', dataDir: dir, seedFilePath: tempSeedPath });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const base = `http://127.0.0.1:${port}`;
+
+  try {
+    // 1. Root index.html redirects straight to POS billing screen (#/sales/new)
+    const idxHtml = await fetch(`${base}/`).then((r) => r.text());
+    assert.match(idxHtml, /dashboard\.html#\/sales\/new/);
+
+    const dashHtml = await fetch(`${base}/dashboard.html`).then((r) => r.text());
+    assert.match(dashHtml, /ensureAutoPosnicLogin/);
+
+    // 2. Adding a new item in the UI auto-writes seed-data.mjs on disk
+    const added = await fetch(`${base}/items`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Macisla Signature Espresso',
+        selling_price: 42000,
+        company_price: 14000,
+        category_name: 'Beverages',
+        image: [],
+      }),
+    }).then((r) => r.json());
+    assert.equal(added.type, 'success');
+    assert.equal(added.data.image, 'item.svg');
+
+    assert.equal(fs.existsSync(tempSeedPath), true);
+    const seedSrc = fs.readFileSync(tempSeedPath, 'utf8');
+    assert.match(seedSrc, /Macisla Signature Espresso/);
+    assert.match(seedSrc, /42000/);
+
+    // 3. Auxiliary subroutes (priceSheet / ssoClientLogin) do NOT pollute items or users
+    await fetch(`${base}/items/priceSheet`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'pricePreference' }),
+    });
+    await fetch(`${base}/users/ssoClientLogin`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const allItems = await fetch(`${base}/items?page=1&limit=100`).then((r) => r.json());
+    assert.equal(allItems.data.list.some((it) => it._id === 'priceSheet'), false);
+    const allUsers = await fetch(`${base}/users?page=1&limit=100`).then((r) => r.json());
+    assert.equal(allUsers.data.list.some((u) => u._id === 'ssoClientLogin'), false);
+  } finally {
+    server.closeAllConnections?.();
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

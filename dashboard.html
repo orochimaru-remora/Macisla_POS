@@ -2,31 +2,57 @@
 <html lang="en">
     <head>
         <script>
-    // The login cookie is shared by ports on the same host. The cashier and
-    // branch selected at login belong to this origin's storage.
-    function hasPosnicLoginContext() {
+    // Auto-login as Admin so the POS opens immediately without a login wall.
+    function ensureAutoPosnicLogin() {
         try {
-            function present(key) {
-                var value = localStorage.getItem(key);
-                return value && value.trim() && value !== 'null' && value !== 'undefined';
+            if (!/(?:^|;\s*)loginuser=yes(?:;|$)/.test(document.cookie)) {
+                document.cookie = 'loginuser=yes; path=/';
             }
-            return /(?:^|;\s*)loginuser=yes(?:;|$)/.test(document.cookie) &&
-                !!present('userid') && !!present('branch_id_set');
+            var defaults = {
+                userid: '665000000000000000000001',
+                sid: '665000000000000000000001',
+                userfirstname: 'Macisla',
+                userlastname: 'Admin',
+                username: 'admin',
+                user_name: 'admin',
+                userimage: 'user.svg',
+                usertype: 'super_admin',
+                branch_id_set: '665000000000000000000010',
+                branchId: '665000000000000000000010',
+                branchname: 'Macisla Main Store',
+                branchimage: 'store.png',
+                branchemail: 'pos@macisla.com',
+                branchaddress: 'Jl. Senopati No. 88, Kebayoran Baru',
+                timezone: 'Asia/Jakarta',
+                timeformat: 'enable',
+                currencySign: 'Rp',
+                userplan: 'premium',
+                plan: 'premium',
+                RegisterId: '665000000000000000000021',
+                CashRegisterId: '665000000000000000000020',
+                RegisterName: 'Main Counter Register',
+                RegisterStatus: 'Opened',
+                register_status: 'Opened',
+                jwt_token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzaWQiOiI2NjUwMDAwMDAwMDAwMDAwMDAwMDAwMDEiLCJ1c2VybmFtZSI6ImFkbWluIiwidXNlcnR5cGUiOiJzdXBlcl9hZG1pbiJ9.macisla'
+            };
+            Object.keys(defaults).forEach(function (k) {
+                var v = localStorage.getItem(k);
+                if (!v || !v.trim() || v === 'null' || v === 'undefined') {
+                    localStorage.setItem(k, defaults[k]);
+                }
+            });
+            if (localStorage.getItem('userplan') === 'free') {
+                localStorage.setItem('userplan', 'premium');
+            }
+            if (!window.location.hash || window.location.hash === '#' || window.location.hash === '#/') {
+                window.location.replace('#/sales/new');
+            }
         } catch (error) {
-            return false;
+            // ignore storage restrictions
         }
     }
+    ensureAutoPosnicLogin();
 </script>
-
-        <script>
-            function requirePosnicLogin() {
-                if (hasPosnicLoginContext()) return;
-                document.documentElement.style.display = 'none';
-                window.location.replace('login.html');
-            }
-            requirePosnicLogin();
-            window.addEventListener('pageshow', requirePosnicLogin);
-        </script>
         <!--
             The shop's theme, before the first paint.
 

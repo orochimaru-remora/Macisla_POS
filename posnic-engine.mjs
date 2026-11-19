@@ -1,13 +1,37 @@
 // Macisla_POS — Original Posnic API Engine for Cloudflare D1 + R2 & Local SQLite
-// Serves the 100% unmodified Posnic frontend while routing all persistence to D1/SQLite & R2.
+// Serves the Posnic frontend while routing all persistence to D1/SQLite & R2 and syncing catalog/settings via seed-data.mjs.
+import {
+  SEED_DATA,
+  SEED_VERSION,
+  SYNC_COLLECTIONS,
+  DEFAULT_BRANCH_ID,
+  DEFAULT_REGISTER_ID,
+  DEFAULT_CASH_REGISTER_ID,
+  DEFAULT_ADMIN_ID,
+  DEFAULT_CUSTOMER_ID,
+  DEFAULT_SUPPLIER_ID,
+  DEFAULT_TAX_ID,
+} from './seed-data.mjs';
 
-export const DEFAULT_BRANCH_ID = '665000000000000000000010';
-export const DEFAULT_REGISTER_ID = '665000000000000000000021';
-export const DEFAULT_CASH_REGISTER_ID = '665000000000000000000020';
-export const DEFAULT_ADMIN_ID = '665000000000000000000001';
-export const DEFAULT_CUSTOMER_ID = '665000000000000000000301';
-export const DEFAULT_SUPPLIER_ID = '665000000000000000000401';
-export const DEFAULT_TAX_ID = '665000000000000000000501';
+export {
+  DEFAULT_BRANCH_ID,
+  DEFAULT_REGISTER_ID,
+  DEFAULT_CASH_REGISTER_ID,
+  DEFAULT_ADMIN_ID,
+  DEFAULT_CUSTOMER_ID,
+  DEFAULT_SUPPLIER_ID,
+  DEFAULT_TAX_ID,
+};
+
+function isObjectId(v) {
+  return typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
+}
+
+function normalizeImageField(img, fallback = 'item.svg') {
+  if (typeof img === 'string' && img.trim()) return img.trim();
+  if (Array.isArray(img) && img.length > 0 && typeof img[0] === 'string' && img[0].trim()) return img[0].trim();
+  return fallback;
+}
 
 export function newObjectId(date = new Date()) {
   const ts = Math.floor(date.getTime() / 1000).toString(16).padStart(8, '0');
@@ -148,558 +172,196 @@ const DATE_FORMATS = [
 ];
 
 export async function ensureSeeded(store) {
+  const storedSeed = await store.get('meta', 'seed_version');
   const existingBranches = await store.list('branches');
-  if (existingBranches.length > 0) return;
+  const isFresh = existingBranches.length === 0;
+  if (!isFresh && storedSeed && storedSeed.version === SEED_VERSION) return;
 
-  const now = nowIso();
-  const catIds = {
-    haircuts: '665000000000000000000201',
-    haircare: '665000000000000000000202',
-    beverages: '665000000000000000000203',
-    general: '665000000000000000000204',
-  };
+  store.setSyncPaused?.(true);
+  try {
+    const now = nowIso();
+    for (const col of SYNC_COLLECTIONS) {
+      let docs = (SEED_DATA[col] || []).map((d) => ({ ...d }));
+      if (col === 'branches') {
+        docs = docs.map((b) => ({
+          ...b,
+          print_a4html: b.print_a4html || PRINT_A4_TEMPLATE,
+          print_standard_html: b.print_standard_html || PRINT_THERMAL_TEMPLATE,
+        }));
+      } else if (col === 'users') {
+        docs = docs.map((u) => ({
+          ...u,
+          access: u.access || fullAcl(u.usertype || u.role || 'super_admin'),
+        }));
+      }
+      if (store.replaceCollection) {
+        await store.replaceCollection(col, docs);
+      } else {
+        for (const d of docs) {
+          await store.put(col, String(d._id || d.id), d);
+        }
+      }
+    }
 
-  // Branch & Store Settings
-  await store.put('branches', DEFAULT_BRANCH_ID, {
-    _id: DEFAULT_BRANCH_ID,
-    id: DEFAULT_BRANCH_ID,
-    branch_name: 'Macisla Main Store',
-    name: 'Macisla Main Store',
-    branch_image: 'store.png',
-    logo: 'store.png',
-    store_address: 'Jl. Senopati No. 88, Kebayoran Baru',
-    address: 'Jl. Senopati No. 88, Kebayoran Baru',
-    printing_address: 'Jl. Senopati No. 88, Kebayoran Baru, Jakarta Selatan',
-    store_email: 'pos@macisla.com',
-    branch_email: 'pos@macisla.com',
-    store_telephone: '+62 812-8888-9900',
-    branch_phone: '+62 812-8888-9900',
-    store_alternativephone: '',
-    place: 'Kebayoran Baru',
-    city: 'Jakarta Selatan',
-    state: 'DKI Jakarta',
-    country: 'Indonesia',
-    country_id: 102,
-    pincode: '12190',
-    website: 'https://pos.macisla.com',
-    languge: 'English',
-    currency: 'IDR',
-    currency_text: 'IDR',
-    currency_type: 'Rp',
-    currency_value: [{ currency_sign: 'Rp', currency_text: 'IDR' }],
-    time_zone: 'Asia/Jakarta',
-    time_format: 'enable',
-    client_dateformat: 'YYYY-MM-DD',
-    server_dateformat: 'YYYY-MM-DD',
-    dateformat_text: 'YYYY-MM-DD',
-    sales_prefix: 'S',
-    receiving_prefix: 'P',
-    invoice_prefix: 'INV-',
-    invoice_due_days: 30,
-    invoice_terms: 'Thank you for your business.',
-    print_type: 'thermal',
-    print_size: '80mm',
-    print_character: '42',
-    bill_print_copies: 1,
-    print_url: false,
-    print_logoimg: true,
-    print_sale_notes: true,
-    customer_print: true,
-    printall: false,
-    roundOff: false,
-    keyboard_view: false,
-    stock_management: true,
-    stock_management_log: true,
-    table_options: false,
-    cash_register_enable: true,
-    enable_multi_payment: true,
-    sale_quick_edit_enable: true,
-    allow_sale_date_edit: true,
-    allow_payment_correction: true,
-    allow_sale_hard_delete: true,
-    module_tax_enable: true,
-    module_credit_enable: true,
-    module_marketing_enable: true,
-    module_messaging_enable: false,
-    module_channels_enable: false,
-    module_online_ordering_enable: false,
-    module_kiosk_enable: false,
-    module_captain_enable: false,
-    module_mobile_pos_enable: false,
-    module_billing_outlets_enable: false,
-    module_delivery_partners_enable: false,
-    module_webshop_enable: false,
-    module_recyclebin_enable: true,
-    module_demo_data_enable: false,
-    module_themes_enable: true,
-    module_cashbook_enable: true,
-    quick_sale_enable: true,
-    quotes_enable: true,
-    invoices_enable: true,
-    staff_shifts_enable: true,
-    staff_roster_enable: true,
-    staff_tips_enable: false,
-    ai_enabled: false,
-    ask_posnic_enabled: false,
-    customer_checkbox: true,
-    supplier_checkbox: true,
-    tax_checkbox: true,
-    default_customer: DEFAULT_CUSTOMER_ID,
-    default_supplier: DEFAULT_SUPPLIER_ID,
-    default_tax: DEFAULT_TAX_ID,
-    tax_percentage: 0,
-    discount_amount: '0',
-    discount_percentage: '0',
-    indian_gst: 'gst_off',
-    branch_gstin_number: '',
-    notification_range: 5,
-    sms_auto_send_time: '09:00 PM',
-    sms_retry_period: '15',
-    sms_max_retries: '3',
-    payment_gateway: { status: 'false', key: '', secret: '' },
-    phonepe_payment_gateway: { merchantId: '', saltKey: '' },
-    email_fields: [],
-    register: [{ _id: DEFAULT_REGISTER_ID, register_name: 'Main Counter Register' }],
-    header_print: 'Macisla Main Store',
-    footer_print: 'Thank you for visiting Macisla! pos.macisla.com',
-    print_a4html: PRINT_A4_TEMPLATE,
-    print_standard_html: PRINT_THERMAL_TEMPLATE,
-    regular_body_print: null,
-    thermal_body_print: null,
-    online_ordering: { store_id: 'macisla', enabled: false },
-    first_run_done: true,
-    first_run_decided: true,
-    created_date: now,
-    updated_date: now,
-  });
+    const existingCounters = await store.get('meta', 'counters');
+    if (!existingCounters) {
+      await store.put('meta', 'counters', {
+        _id: 'counters',
+        sale_seq: 1002,
+        receiving_seq: 1000,
+        quote_seq: 1000,
+        invoice_seq: 1000,
+      });
+    }
 
-  // Users (match Posnic's 3 demo mode buttons: admin, manager, cashier)
-  const seedUsers = [
-    {
-      _id: DEFAULT_ADMIN_ID,
-      id: DEFAULT_ADMIN_ID,
-      name: 'admin',
-      user_name: 'admin',
-      username: 'admin',
-      firstname: 'Macisla',
-      lastname: 'Admin',
-      email: 'admin@macisla.com',
-      phone: '+62 812-8888-9900',
-      password: 'admin',
-      usertype: 'super_admin',
-      role: 'super_admin',
-      image: 'user.svg',
-      status: 'Active',
-      branch_id: [DEFAULT_BRANCH_ID],
-      access: fullAcl('super_admin'),
-      created_date: now,
-      updated_date: now,
-    },
-    {
-      _id: '665000000000000000000002',
-      id: '665000000000000000000002',
-      name: 'manager',
-      user_name: 'manager',
-      username: 'manager',
-      firstname: 'Shop',
-      lastname: 'Manager',
-      email: 'manager@macisla.com',
-      phone: '+62 812-8888-9901',
-      password: 'manager',
-      usertype: 'manager',
-      role: 'manager',
-      image: 'user.svg',
-      status: 'Active',
-      branch_id: [DEFAULT_BRANCH_ID],
-      access: fullAcl('manager'),
-      created_date: now,
-      updated_date: now,
-    },
-    {
-      _id: '665000000000000000000003',
-      id: '665000000000000000000003',
-      name: 'cashier',
-      user_name: 'cashier',
-      username: 'cashier',
-      firstname: 'Front',
-      lastname: 'Cashier',
-      email: 'cashier@macisla.com',
-      phone: '+62 812-8888-9902',
-      password: 'cashier',
-      usertype: 'cashier',
-      role: 'cashier',
-      image: 'user.svg',
-      status: 'Active',
-      branch_id: [DEFAULT_BRANCH_ID],
-      access: fullAcl('cashier'),
-      created_date: now,
-      updated_date: now,
-    },
-  ];
-  for (const u of seedUsers) await store.put('users', u._id, u);
+    // Seed 2 starter sales ONLY on a brand-new empty DB (never overwrite live sales on deploy!)
+    const existingSales = await store.list('sales');
+    if (isFresh && existingSales.length === 0) {
+      const sale1Id = newObjectId(new Date(Date.now() - 55 * 60 * 1000));
+      const sale2Id = newObjectId(new Date(Date.now() - 25 * 60 * 1000));
+      await store.put('sales', sale1Id, {
+        _id: sale1Id,
+        id: sale1Id,
+        sales_document_id: sale1Id,
+        sales_id: 'S-1001',
+        branch_id: DEFAULT_BRANCH_ID,
+        register_id: DEFAULT_REGISTER_ID,
+        user_id: DEFAULT_ADMIN_ID,
+        user_name: 'admin',
+        sold_by: 'Macisla Admin',
+        customer_id: '665000000000000000000302',
+        customer_name: 'Andi Pratama',
+        customer_phone: '+62 812-1111-2233',
+        customer_email: 'andi@example.com',
+        customer_address: 'Jl. Dharmawangsa No. 4, Jakarta',
+        payment_mode: 'QRIS',
+        payment_status: 'Paid',
+        sale_process: 'Add',
+        items: [
+          {
+            item_id: '6650000000000000000102',
+            item_name: 'Skin Fade & Hot Towel',
+            barcode_id: '8990001000024',
+            item_quantity: 1,
+            selling_price: 150000,
+            item_price: 150000,
+            item_price_total: 150000,
+            company_price_total: 45000,
+            item_discount: 0,
+            item_discount_percentage: 0,
+            tax: 0,
+            tax_type: 'Exclusive',
+            category_id: '6650000000000000000201',
+            category_name: 'Haircuts & Grooming',
+            item_unit: 'session',
+          },
+          {
+            item_id: '6650000000000000000105',
+            item_name: 'Macisla Matte Clay 100g',
+            barcode_id: '8990001000055',
+            item_quantity: 1,
+            selling_price: 165000,
+            item_price: 165000,
+            item_price_total: 165000,
+            company_price_total: 72000,
+            item_discount: 0,
+            item_discount_percentage: 0,
+            tax: 0,
+            tax_type: 'Exclusive',
+            category_id: '6650000000000000000202',
+            category_name: 'Hair Care Products',
+            item_unit: 'pcs',
+          },
+        ],
+        number_of_items: 2,
+        sales_sub_total: 315000,
+        sales_total: 315000,
+        total_amount: 315000,
+        sales_total_company_price: 117000,
+        tax: 0,
+        discount: 0,
+        extra_discount: 0,
+        extra_discount_type: 'price',
+        date: now,
+        string_date: now,
+        created_date: now,
+        updated_date: now,
+      });
 
-  // Cash Register
-  await store.put('registers', DEFAULT_REGISTER_ID, {
-    _id: DEFAULT_REGISTER_ID,
-    id: DEFAULT_REGISTER_ID,
-    register_id: DEFAULT_REGISTER_ID,
-    cash_register_id: DEFAULT_CASH_REGISTER_ID,
-    register_name: 'Main Counter Register',
-    branch_id: DEFAULT_BRANCH_ID,
-    branch_name: 'Macisla Main Store',
-    register_status: 'Opened',
-    opening_balance: 500000,
-    opened_at: now,
-    opened_by: 'admin',
-    in_use: true,
-    in_use_by: 'admin',
-    created_date: now,
-    updated_date: now,
-  });
+      await store.put('sales', sale2Id, {
+        _id: sale2Id,
+        id: sale2Id,
+        sales_document_id: sale2Id,
+        sales_id: 'S-1002',
+        branch_id: DEFAULT_BRANCH_ID,
+        register_id: DEFAULT_REGISTER_ID,
+        user_id: DEFAULT_ADMIN_ID,
+        user_name: 'admin',
+        sold_by: 'Macisla Admin',
+        customer_id: DEFAULT_CUSTOMER_ID,
+        customer_name: 'Walk-in Customer',
+        customer_phone: '0000000000',
+        customer_email: 'walkin@macisla.com',
+        customer_address: 'Jakarta',
+        payment_mode: 'Cash',
+        payment_status: 'Paid',
+        sale_process: 'Add',
+        items: [
+          {
+            item_id: '6650000000000000000101',
+            item_name: 'Signature Gentleman Cut',
+            barcode_id: '8990001000017',
+            item_quantity: 1,
+            selling_price: 120000,
+            item_price: 120000,
+            item_price_total: 120000,
+            company_price_total: 35000,
+            item_discount: 0,
+            item_discount_percentage: 0,
+            tax: 0,
+            tax_type: 'Exclusive',
+            category_id: '6650000000000000000201',
+            category_name: 'Haircuts & Grooming',
+            item_unit: 'session',
+          },
+          {
+            item_id: '6650000000000000000109',
+            item_name: 'Iced Americano',
+            barcode_id: '8990001000093',
+            item_quantity: 1,
+            selling_price: 35000,
+            item_price: 35000,
+            item_price_total: 35000,
+            company_price_total: 11000,
+            item_discount: 0,
+            item_discount_percentage: 0,
+            tax: 0,
+            tax_type: 'Exclusive',
+            category_id: '6650000000000000000203',
+            category_name: 'Beverages',
+            item_unit: 'qty',
+          },
+        ],
+        number_of_items: 2,
+        sales_sub_total: 155000,
+        sales_total: 155000,
+        total_amount: 155000,
+        sales_total_company_price: 46000,
+        tax: 0,
+        discount: 0,
+        extra_discount: 0,
+        extra_discount_type: 'price',
+        date: now,
+        string_date: now,
+        created_date: now,
+        updated_date: now,
+      });
+    }
 
-  // Taxes
-  const seedTaxes = [
-    { _id: DEFAULT_TAX_ID, id: DEFAULT_TAX_ID, tax_name: 'No Tax (0%)', tax_value: 0, tax_type: 'Exclusive', is_default: true },
-    { _id: '665000000000000000000502', id: '665000000000000000000502', tax_name: 'PPN 11%', tax_value: 11, tax_type: 'Exclusive', is_default: false },
-    { _id: '665000000000000000000503', id: '665000000000000000000503', tax_name: 'Service 5%', tax_value: 5, tax_type: 'Inclusive', is_default: false },
-  ];
-  for (const t of seedTaxes) await store.put('taxes', t._id, { ...t, created_date: now, updated_date: now });
-
-  // Payment methods
-  const seedPayments = [
-    { _id: '665000000000000000000601', id: '665000000000000000000601', payment_value: 'Cash', payment_name: 'Cash', active: true },
-    { _id: '665000000000000000000602', id: '665000000000000000000602', payment_value: 'QRIS', payment_name: 'QRIS', active: true },
-    { _id: '665000000000000000000603', id: '665000000000000000000603', payment_value: 'Card', payment_name: 'Card', active: true },
-    { _id: '665000000000000000000604', id: '665000000000000000000604', payment_value: 'Transfer', payment_name: 'Bank Transfer', active: true },
-  ];
-  for (const p of seedPayments) await store.put('payments', p._id, { ...p, created_date: now, updated_date: now });
-
-  // Units
-  const seedUnits = ['qty', 'pcs', 'session', 'bottle', 'box', 'kg'].map((u, idx) => ({
-    _id: `66500000000000000000070${idx + 1}`,
-    id: `66500000000000000000070${idx + 1}`,
-    unit_name: u,
-    unit_short: u,
-    created_date: now,
-    updated_date: now,
-  }));
-  for (const u of seedUnits) await store.put('units', u._id, u);
-
-  // Denominations (IDR banknotes)
-  const seedDenoms = [100000, 50000, 20000, 10000, 5000, 2000, 1000].map((val, idx) => ({
-    _id: `66500000000000000000080${idx + 1}`,
-    id: `66500000000000000000080${idx + 1}`,
-    denom_value: String(val),
-    denomination: val,
-    value: val,
-    created_date: now,
-    updated_date: now,
-  }));
-  for (const d of seedDenoms) await store.put('denominations', d._id, d);
-
-  // Categories
-  const seedCategories = [
-    { _id: catIds.haircuts, id: catIds.haircuts, name: 'Haircuts & Grooming', category_name: 'Haircuts & Grooming', description: 'Haircuts, fades, styling, beard trims & hot towel treatments', image: 'category.svg', tile_color: '#2563EB', tile_shape: 'rounded' },
-    { _id: catIds.haircare, id: catIds.haircare, name: 'Hair Care Products', category_name: 'Hair Care Products', description: 'Pomades, matte clay, sea salt spray, beard oil & shampoo', image: 'category.svg', tile_color: '#0D9488', tile_shape: 'rounded' },
-    { _id: catIds.beverages, id: catIds.beverages, name: 'Beverages', category_name: 'Beverages', description: 'Specialty coffee, cold brew & refreshments', image: 'category.svg', tile_color: '#D97706', tile_shape: 'rounded' },
-    { _id: catIds.general, id: catIds.general, name: 'General', category_name: 'General', description: 'General retail items', image: 'category.svg', tile_color: '#64748B', tile_shape: 'rounded' },
-  ];
-  for (const c of seedCategories) await store.put('categories', c._id, { ...c, created_date: now, updated_date: now });
-
-  // Suppliers
-  await store.put('suppliers', DEFAULT_SUPPLIER_ID, {
-    _id: DEFAULT_SUPPLIER_ID,
-    id: DEFAULT_SUPPLIER_ID,
-    name: 'Macisla Supply Co.',
-    supplier_name: 'Macisla Supply Co.',
-    company_name: 'Macisla Supply Co.',
-    phone: '+62 21-555-0199',
-    email: 'supply@macisla.com',
-    address: 'Jl. Kemang Raya No. 12, Jakarta',
-    city: 'Jakarta',
-    state: 'DKI Jakarta',
-    country: 'Indonesia',
-    created_date: now,
-    updated_date: now,
-  });
-
-  // Customers
-  const seedCustomers = [
-    {
-      _id: DEFAULT_CUSTOMER_ID,
-      id: DEFAULT_CUSTOMER_ID,
-      name: 'Walk-in Customer',
-      customer_name: 'Walk-in Customer',
-      phone: '0000000000',
-      email: 'walkin@macisla.com',
-      address: 'Jakarta',
-      city: 'Jakarta',
-      state: 'DKI Jakarta',
-      country: 'Indonesia',
-      customer_balance: 0,
-      wallet_amount: 0,
-      partial_balance: 0,
-      is_default: true,
-    },
-    {
-      _id: '665000000000000000000302',
-      id: '665000000000000000000302',
-      name: 'Andi Pratama',
-      customer_name: 'Andi Pratama',
-      phone: '+62 812-1111-2233',
-      email: 'andi@example.com',
-      address: 'Jl. Dharmawangsa No. 4, Jakarta',
-      city: 'Jakarta',
-      state: 'DKI Jakarta',
-      country: 'Indonesia',
-      customer_balance: 0,
-      wallet_amount: 0,
-      partial_balance: 0,
-    },
-    {
-      _id: '665000000000000000000303',
-      id: '665000000000000000000303',
-      name: 'Budi Santoso',
-      customer_name: 'Budi Santoso',
-      phone: '+62 813-4444-5566',
-      email: 'budi@example.com',
-      address: 'Jl. Gunawarman No. 19, Jakarta',
-      city: 'Jakarta',
-      state: 'DKI Jakarta',
-      country: 'Indonesia',
-      customer_balance: 0,
-      wallet_amount: 0,
-      partial_balance: 0,
-    },
-    {
-      _id: '665000000000000000000304',
-      id: '665000000000000000000304',
-      name: 'Rina Kusuma',
-      customer_name: 'Rina Kusuma',
-      phone: '+62 811-7777-8899',
-      email: 'rina@example.com',
-      address: 'SCBD Lot 8, Jakarta',
-      city: 'Jakarta',
-      state: 'DKI Jakarta',
-      country: 'Indonesia',
-      customer_balance: 0,
-      wallet_amount: 0,
-      partial_balance: 0,
-    },
-  ];
-  for (const c of seedCustomers) await store.put('customers', c._id, { ...c, created_date: now, updated_date: now });
-
-  // Items
-  const seedItems = [
-    { id: '665000000000000000000101', sku: 'MCS-001', barcode: '8990001000017', name: 'Signature Gentleman Cut', catId: catIds.haircuts, catName: 'Haircuts & Grooming', sell: 120000, cost: 35000, qty: 99, track: false, kind: 'service', unit: 'session', color: '#2563EB' },
-    { id: '665000000000000000000102', sku: 'MCS-002', barcode: '8990001000024', name: 'Skin Fade & Hot Towel', catId: catIds.haircuts, catName: 'Haircuts & Grooming', sell: 150000, cost: 45000, qty: 99, track: false, kind: 'service', unit: 'session', color: '#1D4ED8' },
-    { id: '665000000000000000000103', sku: 'MCS-003', barcode: '8990001000031', name: 'Beard Trim & Lineup', catId: catIds.haircuts, catName: 'Haircuts & Grooming', sell: 75000, cost: 20000, qty: 99, track: false, kind: 'service', unit: 'session', color: '#3B82F6' },
-    { id: '665000000000000000000104', sku: 'MCS-004', barcode: '8990001000048', name: 'AI Face Shape Styling Consult', catId: catIds.haircuts, catName: 'Haircuts & Grooming', sell: 50000, cost: 10000, qty: 99, track: false, kind: 'service', unit: 'session', color: '#6366F1' },
-    { id: '665000000000000000000105', sku: 'MCS-005', barcode: '8990001000055', name: 'Macisla Matte Clay 100g', catId: catIds.haircare, catName: 'Hair Care Products', sell: 165000, cost: 72000, qty: 28, track: true, kind: 'product', unit: 'pcs', color: '#0D9488' },
-    { id: '665000000000000000000106', sku: 'MCS-006', barcode: '8990001000062', name: 'Water-Based Shine Pomade', catId: catIds.haircare, catName: 'Hair Care Products', sell: 145000, cost: 65000, qty: 22, track: true, kind: 'product', unit: 'pcs', color: '#0F766E' },
-    { id: '665000000000000000000107', sku: 'MCS-007', barcode: '8990001000079', name: 'Sea Salt Texture Spray 150ml', catId: catIds.haircare, catName: 'Hair Care Products', sell: 135000, cost: 58000, qty: 18, track: true, kind: 'product', unit: 'bottle', color: '#14B8A6' },
-    { id: '665000000000000000000108', sku: 'MCS-008', barcode: '8990001000086', name: 'Cedarwood Beard Oil 30ml', catId: catIds.haircare, catName: 'Hair Care Products', sell: 155000, cost: 68000, qty: 4, track: true, kind: 'product', unit: 'bottle', color: '#059669' },
-    { id: '665000000000000000000109', sku: 'MCS-009', barcode: '8990001000093', name: 'Iced Americano', catId: catIds.beverages, catName: 'Beverages', sell: 35000, cost: 11000, qty: 50, track: true, kind: 'product', unit: 'qty', color: '#D97706' },
-    { id: '665000000000000000000110', sku: 'MCS-010', barcode: '8990001000109', name: 'Oat Milk Latte', catId: catIds.beverages, catName: 'Beverages', sell: 45000, cost: 16000, qty: 40, track: true, kind: 'product', unit: 'qty', color: '#B45309' },
-  ];
-  for (const it of seedItems) {
-    await store.put('items', it.id, {
-      _id: it.id,
-      id: it.id,
-      name: it.name,
-      item_name: it.name,
-      itemid: it.sku,
-      barcode_id: it.barcode,
-      category_id: it.catId,
-      category_name: it.catName,
-      supplier_id: DEFAULT_SUPPLIER_ID,
-      supplier_name: 'Macisla Supply Co.',
-      selling_price: it.sell,
-      mrp_price: it.sell,
-      company_price: it.cost,
-      available_quantity: it.qty,
-      low_stock: 5,
-      track_inventory: it.track,
-      negative_stock: !it.track,
-      available_for_sale: true,
-      item_kind: it.kind,
-      unit: it.unit,
-      tax: 0,
-      tax_type: 'Exclusive',
-      tax_name: 'No Tax (0%)',
-      discount_amount: 0,
-      discount_percentage: 0,
-      image: 'item.svg',
-      tile_color: it.color,
-      tile_shape: 'rounded',
-      branch_id: DEFAULT_BRANCH_ID,
-      status: 'Active',
-      created_by: 'admin',
-      created_date: now,
-      updated_date: now,
-    });
+    await store.put('meta', 'seed_version', { _id: 'seed_version', version: SEED_VERSION, synced_at: now });
+  } finally {
+    store.setSyncPaused?.(false);
   }
-
-  // Sample Sales (today) so Dashboard & Sales History look alive immediately
-  const sale1Id = newObjectId(new Date(Date.now() - 55 * 60 * 1000));
-  const sale2Id = newObjectId(new Date(Date.now() - 25 * 60 * 1000));
-  await store.put('sales', sale1Id, {
-    _id: sale1Id,
-    id: sale1Id,
-    sales_document_id: sale1Id,
-    sales_id: 'S-1001',
-    branch_id: DEFAULT_BRANCH_ID,
-    register_id: DEFAULT_REGISTER_ID,
-    user_id: DEFAULT_ADMIN_ID,
-    user_name: 'admin',
-    sold_by: 'Macisla Admin',
-    customer_id: '665000000000000000000302',
-    customer_name: 'Andi Pratama',
-    customer_phone: '+62 812-1111-2233',
-    customer_email: 'andi@example.com',
-    customer_address: 'Jl. Dharmawangsa No. 4, Jakarta',
-    payment_mode: 'QRIS',
-    payment_status: 'Paid',
-    sale_process: 'Add',
-    items: [
-      {
-        item_id: '665000000000000000000102',
-        item_name: 'Skin Fade & Hot Towel',
-        barcode_id: '8990001000024',
-        item_quantity: 1,
-        selling_price: 150000,
-        item_price: 150000,
-        item_price_total: 150000,
-        company_price_total: 45000,
-        item_discount: 0,
-        item_discount_percentage: 0,
-        tax: 0,
-        tax_type: 'Exclusive',
-        category_id: catIds.haircuts,
-        category_name: 'Haircuts & Grooming',
-        item_unit: 'session',
-      },
-      {
-        item_id: '665000000000000000000105',
-        item_name: 'Macisla Matte Clay 100g',
-        barcode_id: '8990001000055',
-        item_quantity: 1,
-        selling_price: 165000,
-        item_price: 165000,
-        item_price_total: 165000,
-        company_price_total: 72000,
-        item_discount: 0,
-        item_discount_percentage: 0,
-        tax: 0,
-        tax_type: 'Exclusive',
-        category_id: catIds.haircare,
-        category_name: 'Hair Care Products',
-        item_unit: 'pcs',
-      },
-    ],
-    number_of_items: 2,
-    sales_sub_total: 315000,
-    sales_total: 315000,
-    total_amount: 315000,
-    sales_total_company_price: 117000,
-    tax: 0,
-    discount: 0,
-    extra_discount: 0,
-    extra_discount_type: 'price',
-    date: now,
-    string_date: now,
-    created_date: now,
-    updated_date: now,
-  });
-
-  await store.put('sales', sale2Id, {
-    _id: sale2Id,
-    id: sale2Id,
-    sales_document_id: sale2Id,
-    sales_id: 'S-1002',
-    branch_id: DEFAULT_BRANCH_ID,
-    register_id: DEFAULT_REGISTER_ID,
-    user_id: DEFAULT_ADMIN_ID,
-    user_name: 'admin',
-    sold_by: 'Macisla Admin',
-    customer_id: DEFAULT_CUSTOMER_ID,
-    customer_name: 'Walk-in Customer',
-    customer_phone: '0000000000',
-    customer_email: 'walkin@macisla.com',
-    customer_address: 'Jakarta',
-    payment_mode: 'Cash',
-    payment_status: 'Paid',
-    sale_process: 'Add',
-    items: [
-      {
-        item_id: '665000000000000000000101',
-        item_name: 'Signature Gentleman Cut',
-        barcode_id: '8990001000017',
-        item_quantity: 1,
-        selling_price: 120000,
-        item_price: 120000,
-        item_price_total: 120000,
-        company_price_total: 35000,
-        item_discount: 0,
-        item_discount_percentage: 0,
-        tax: 0,
-        tax_type: 'Exclusive',
-        category_id: catIds.haircuts,
-        category_name: 'Haircuts & Grooming',
-        item_unit: 'session',
-      },
-      {
-        item_id: '665000000000000000000109',
-        item_name: 'Iced Americano',
-        barcode_id: '8990001000093',
-        item_quantity: 1,
-        selling_price: 35000,
-        item_price: 35000,
-        item_price_total: 35000,
-        company_price_total: 11000,
-        item_discount: 0,
-        item_discount_percentage: 0,
-        tax: 0,
-        tax_type: 'Exclusive',
-        category_id: catIds.beverages,
-        category_name: 'Beverages',
-        item_unit: 'qty',
-      },
-    ],
-    number_of_items: 2,
-    sales_sub_total: 155000,
-    sales_total: 155000,
-    total_amount: 155000,
-    sales_total_company_price: 46000,
-    tax: 0,
-    discount: 0,
-    extra_discount: 0,
-    extra_discount_type: 'price',
-    date: now,
-    string_date: now,
-    created_date: now,
-    updated_date: now,
-  });
-
-  // Theme & meta settings
-  await store.put('meta', 'theme', {
-    _id: 'theme',
-    theme: 'light',
-    theme_name: 'default',
-    primary_color: '#506fe4',
-    updated_date: now,
-  });
-  await store.put('meta', 'counters', {
-    _id: 'counters',
-    sale_seq: 1002,
-    receiving_seq: 1000,
-    quote_seq: 1000,
-    invoice_seq: 1000,
-  });
-  await store.put('meta', 'stock_preference', {
-    _id: 'stock_preference',
-    preference: 'track',
-  });
 }
 
 function jsonResp(body, status = 200, extraHeaders = {}) {
@@ -1483,6 +1145,10 @@ export async function handlePosnicRequest(request, store, env = {}) {
       return ok({ preference: pref?.preference || 'track' });
     }
 
+    if (sub === 'priceSheet') {
+      return ok({ list: [], total: 0 });
+    }
+
     if (sub === 'uploadItemImage' && method === 'POST') {
       const imgUrl = await saveUploadedFile(files[0], store, 'items');
       return ok(imgUrl || 'item.svg', 'Image uploaded');
@@ -1528,7 +1194,7 @@ export async function handlePosnicRequest(request, store, env = {}) {
         tax_type: body.tax_type || 'Exclusive',
         discount_amount: num(body.discount_amount, 0),
         discount_percentage: num(body.discount_percentage, 0),
-        image: body.image || 'item.svg',
+        image: normalizeImageField(body.image, 'item.svg'),
         tile_color: body.tile_color || '#2563EB',
         tile_shape: body.tile_shape || 'rounded',
         description: body.description || '',
@@ -1540,6 +1206,33 @@ export async function handlePosnicRequest(request, store, env = {}) {
       };
       await store.put('items', id, doc);
       return ok(doc, 'Item added successfully');
+    }
+
+    if (isObjectId(sub) && (method === 'PUT' || method === 'PATCH' || method === 'POST')) {
+      const existing = await store.get('items', sub);
+      if (existing) {
+        const cats = await store.list('categories');
+        const cat = cats.find((c) => c._id === (body.category_id ?? existing.category_id) || c.name === body.category_name);
+        const nextName = String(body.name || body.item_name || existing.name).trim();
+        const updated = {
+          ...existing,
+          ...body,
+          _id: sub,
+          id: sub,
+          name: nextName,
+          item_name: nextName,
+          category_id: cat?._id ?? body.category_id ?? existing.category_id,
+          category_name: cat?.name ?? body.category_name ?? existing.category_name,
+          selling_price: body.selling_price !== undefined ? num(body.selling_price) : existing.selling_price,
+          mrp_price: body.mrp_price !== undefined ? num(body.mrp_price) : existing.mrp_price,
+          company_price: body.company_price !== undefined ? num(body.company_price) : existing.company_price,
+          available_quantity: body.available_quantity !== undefined ? num(body.available_quantity) : existing.available_quantity,
+          image: body.image !== undefined ? normalizeImageField(body.image, existing.image || 'item.svg') : (existing.image || 'item.svg'),
+          updated_date: nowIso(),
+        };
+        await store.put('items', sub, updated);
+        return ok(updated, 'Item updated successfully');
+      }
     }
   }
 
@@ -2230,8 +1923,13 @@ export async function handlePosnicRequest(request, store, env = {}) {
     return ok(doc, 'Saved successfully');
   }
   if (sub && (method === 'PUT' || method === 'PATCH' || method === 'POST')) {
-    const existing = (await store.get(collection, sub)) || { _id: sub, id: sub, created_date: nowIso() };
-    const updated = { ...existing, ...body, _id: sub, id: sub, updated_date: nowIso() };
+    const existing = await store.get(collection, sub);
+    if (!existing && !isObjectId(sub)) {
+      // Auxiliary Posnic action subroute (e.g. /users/ssoClientLogin) — never pollute collections
+      return ok({ ok: true });
+    }
+    const baseDoc = existing || { _id: sub, id: sub, created_date: nowIso() };
+    const updated = { ...baseDoc, ...body, _id: sub, id: sub, updated_date: nowIso() };
     await store.put(collection, sub, updated);
     return ok(updated, 'Updated successfully');
   }
