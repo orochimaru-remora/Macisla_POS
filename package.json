@@ -1,0 +1,15 @@
+{
+  "name": "macisla-pos",
+  "version": "1.0.0",
+  "description": "Standalone Posnic-style POS & 80mm Thermal Receipt System on Cloudflare Pages, D1, R2, and Local SQLite (pos.macisla.com)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test test/pos.test.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "MIT"
+}
