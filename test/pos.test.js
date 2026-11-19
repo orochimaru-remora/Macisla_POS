@@ -289,6 +289,34 @@ test('Auto-login removes login wall, lands on #/sales/new, and auto-syncs edited
     assert.match(seedSrc, /Macisla Signature Espresso/);
     assert.match(seedSrc, /42000/);
 
+    // 2b. Deleting an item via Posnic's DELETE /items { data: [id] } removes it from DB & seed-data.mjs
+    const delRes = await fetch(`${base}/items`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ data: [added.data._id] }),
+    }).then((r) => r.json());
+    assert.equal(delRes.type, 'success');
+    assert.equal(delRes.data.count, 1);
+
+    const afterDel = await fetch(`${base}/items?page=1&limit=100`).then((r) => r.json());
+    assert.equal(afterDel.data.list.some((it) => it._id === added.data._id), false);
+    const seedAfterDel = fs.readFileSync(tempSeedPath, 'utf8');
+    assert.doesNotMatch(seedAfterDel, /Macisla Signature Espresso/);
+
+    // 2c. Bulk delete via PosnicPro.deleteTableRowData: DELETE /categories/delete { data: [id] }
+    const catAdded = await fetch(`${base}/categories`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Temp Category' }),
+    }).then((r) => r.json());
+    const catDel = await fetch(`${base}/categories/delete`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ data: [catAdded.data._id] }),
+    }).then((r) => r.json());
+    assert.equal(catDel.type, 'success');
+    assert.equal(catDel.data.count, 1);
+
     // 3. Auxiliary subroutes (priceSheet / ssoClientLogin) do NOT pollute items or users
     await fetch(`${base}/items/priceSheet`, {
       method: 'POST',

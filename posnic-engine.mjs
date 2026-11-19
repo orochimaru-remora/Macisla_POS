@@ -1933,9 +1933,20 @@ export async function handlePosnicRequest(request, store, env = {}) {
     await store.put(collection, sub, updated);
     return ok(updated, 'Updated successfully');
   }
-  if (sub && method === 'DELETE') {
-    await store.del(collection, sub);
-    return ok({ deleted: true, id: sub }, 'Deleted successfully');
+  if (method === 'DELETE') {
+    const rawIds = [];
+    if (sub && sub !== 'delete') rawIds.push(sub);
+    if (Array.isArray(body?.data)) rawIds.push(...body.data);
+    else if (typeof body?.data === 'string' && body.data) rawIds.push(body.data);
+    if (Array.isArray(body?.ids)) rawIds.push(...body.ids);
+    if (body?.id) rawIds.push(body.id);
+    if (query?.id) rawIds.push(query.id);
+
+    const uniqueIds = [...new Set(rawIds.map((x) => String(x?._id || x?.id || x || '').trim()).filter(Boolean))];
+    for (const delId of uniqueIds) {
+      await store.del(collection, delId);
+    }
+    return ok({ deleted: true, count: uniqueIds.length, ids: uniqueIds, ok: 1 }, 'Deleted successfully');
   }
 
   return ok({});
