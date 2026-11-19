@@ -1,122 +1,202 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const shared = require('../shared.mjs');
-const storage = require('../storage.js');
-const mw = require('../functions/_middleware.js');
-const edgeApi = require('../functions/api/[[route]].js');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { startServer } from '../server.js';
+import { onRequest } from '../functions/[[path]].js';
 
-test('1: PIN security gate locks out IP after 5 failed attempts and signs valid token', async () => {
-  const env = { BARBER_PIN: '0101', SESSION_SECRET: 'k'.repeat(64) };
-  const ip = '198.51.100.77';
-  mw.clearPinFailures(ip);
+function createTempDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'macisla-pos-test-'));
+}
 
-  for (let i = 1; i <= 4; i++) {
-    const res = await mw.onRequest({
-      request: new Request('https://pos.macisla.com/api/verify-pin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': ip },
-        body: JSON.stringify({ pin: '9999' })
-      }),
-      env,
-      next: async () => new Response('ok')
-    });
-    assert.equal(res.status, 401);
-  }
+test('Original Posnic static UI + full POS login, dashboard, checkout, hold, and stock pipeline', async () => {
+  const dir = createTempDir();
+  const { server } = startServer({ port: 0, host: '127.0.0.1', dataDir: dir });
 
-  const fifth = await mw.onRequest({
-    request: new Request('https://pos.macisla.com/api/verify-pin', {
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const base = `http://127.0.0.1:${port}`;
+
+  try {
+    // 1. Original Posnic HTML & fonts served cleanly
+    const loginHtml = await fetch(`${base}/login.html`);
+    assert.equal(loginHtml.status, 200);
+    const loginBody = await loginHtml.text();
+    assert.match(loginBody, /Posnic/i);
+
+    const dashHtml = await fetch(`${base}/dashboard.html`);
+    assert.equal(dashHtml.status, 200);
+
+    const fontRes = await fetch(`${base}/fonts/fontawesome-webfont.woff2`);
+    assert.equal(fontRes.status, 200);
+
+    // 2. Demo mode runtime-info enables Posnic's 1-click admin/manager/cashier login buttons
+    const runtimeRes = await fetch(`${base}/runtime-info`).then((r) => r.json());
+    assert.equal(runtimeRes.demo, true);
+    assert.equal(runtimeRes.version, '1.9.2');
+
+    // 3. Exact Posnic login sequence: verify -> default branch -> register -> ACL -> settings
+    const login = await fetch(`${base}/users/verify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': ip },
-      body: JSON.stringify({ pin: '9999' })
-    }),
-    env,
-    next: async () => new Response('ok')
-  });
-  assert.equal(fifth.status, 429);
-  mw.clearPinFailures(ip);
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'admin' }),
+    }).then((r) => r.json());
+    assert.equal(login.type, 'success');
+    assert.equal(login.data.usertype, 'super_admin');
+    assert.ok(login.data.jwt_token);
 
-  const secret = mw.getSigningSecret(env, '0101');
-  const token = await mw.createSessionToken(secret);
-  assert.equal(await mw.verifySessionToken(token, secret), true);
-  assert.equal(await mw.verifySessionToken(token, 'wrong'), false);
+    const authHeaders = {
+      authorization: `Bearer ${login.data.jwt_token}`,
+      'content-type': 'application/json',
+    };
+
+    const branchSet = await fetch(`${base}/users/userDefaultBranchSet?id=${login.data.branchId}`, {
+      headers: authHeaders,
+    }).then((r) => r.json());
+    assert.equal(branchSet.type, 'success');
+    assert.equal(branchSet.data.branch_name, 'Macisla Main Store');
+
+    const regSelect = await fetch(`${base}/branches/userRegisterBranchSelect?id=${login.data.branchId}`, {
+      headers: authHeaders,
+    }).then((r) => r.json());
+    assert.equal(regSelect.type, 'success');
+    assert.equal(regSelect.data.open_register.register_status, 'Opened');
+
+    const acl = await fetch(`${base}/users/getUserAccessDetails`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(acl.type, 'success');
+    assert.equal(acl.data.sales.write, true);
+
+    const storeSettings = await fetch(`${base}/branches/getOneStore?id=${login.data.branchId}`, {
+      headers: authHeaders,
+    }).then((r) => r.json());
+    assert.equal(storeSettings.type, 'success');
+    assert.ok(Array.isArray(storeSettings.data.register));
+    assert.ok(storeSettings.data.sms_auto_send_time.includes(' '));
+
+    // 4. Dashboard overview KPIs & Best Sellers
+    const overview = await fetch(`${base}/dashboard/getOverview?filter=day`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(overview.type, 'success');
+    assert.ok(overview.data.kpis.total_sales >= 470000);
+    assert.ok(overview.data.topItems.length >= 2);
+
+    // 5. POS item tile grid & barcode lookup
+    const tileRes = await fetch(`${base}/items/onlineSalesItemsAjaxLists?paginate=true&tile_page=true&limit=48&offset=0`, {
+      headers: authHeaders,
+    }).then((r) => r.json());
+    assert.equal(tileRes.type, 'success');
+    assert.equal(tileRes.data.items.length, 10);
+
+    const clay = tileRes.data.items.find((i) => i.itemid === 'MCS-005');
+    assert.ok(clay);
+    const initialStock = clay.available_quantity;
+
+    // 6. Save a new sale and verify stock decrements + appears in getLatestSales & GET /sales
+    const createSale = await fetch(`${base}/sales`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        customer_id: '665000000000000000000301',
+        customer_name: 'Walk-in Customer',
+        payment_mode: 'QRIS',
+        payment_status: 'Paid',
+        sales_total: clay.selling_price * 2,
+        items: [
+          {
+            item_id: clay._id,
+            item_name: clay.name,
+            item_quantity: 2,
+            selling_price: clay.selling_price,
+            item_price_total: clay.selling_price * 2,
+            company_price: clay.company_price,
+          },
+        ],
+      }),
+    }).then((r) => r.json());
+    assert.equal(createSale.type, 'success');
+    assert.ok(createSale.data.sales_id);
+
+    const clayAfter = await fetch(`${base}/items/${clay._id}`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(clayAfter.data.available_quantity, initialStock - 2);
+
+    const latest = await fetch(`${base}/sales/getLatestSales`, { headers: authHeaders }).then((r) => r.json());
+    const parsedLatest = JSON.parse(latest.data);
+    assert.ok(parsedLatest.some((s) => s.sales_document_id === createSale.data.sales_id));
+
+    // 7. Park / Hold sale
+    const holdRes = await fetch(`${base}/sales/hold`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        customer_name: 'Parked Customer',
+        sales_total: 120000,
+        items: [{ item_id: '665000000000000000000101', item_name: 'Signature Gentleman Cut', item_quantity: 1, selling_price: 120000 }],
+      }),
+    }).then((r) => r.json());
+    assert.equal(holdRes.type, 'success');
+
+    const heldList = await fetch(`${base}/sales/getLatestSales?type=hold`, { headers: authHeaders }).then((r) => r.json());
+    const parsedHeld = JSON.parse(heldList.data);
+    assert.equal(parsedHeld.length, 1);
+  } finally {
+    server.closeAllConnections?.();
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
-test('2: Inventory stock deduction on product sale and stock restoration on void', () => {
-  const itemsBefore = storage.getItems();
-  const clay = itemsBefore.find(i => i.sku === 'PRD-401');
-  assert.ok(clay, 'Default catalog must include PRD-401 clay product');
-  const initialStock = clay.stock;
-
-  const txId = `INV-TEST-${Date.now()}`;
-  const saved = storage.saveTransaction({
-    id: txId,
-    customerName: 'Test Buyer',
-    customerPhone: '+62811000999',
-    cashierName: 'Andi (Senior Barber)',
-    items: [
-      { id: clay.id, sku: clay.sku, name: clay.name, category: clay.category, itemType: 'Product', price: clay.price, qty: 2 }
-    ],
-    discount: 10000,
-    paymentMethod: 'Cash',
-    amountPaid: 300000
+test('Cloudflare Pages Function (functions/[[path]].js) passes static assets to next() and routes API to D1', async () => {
+  let nextCalled = false;
+  await onRequest({
+    request: new Request('https://pos.macisla.com/dashboard.html'),
+    env: {},
+    next: async () => {
+      nextCalled = true;
+      return new Response('ok');
+    },
   });
+  assert.equal(nextCalled, true);
 
-  assert.equal(saved.subtotal, clay.price * 2);
-  assert.equal(saved.total, clay.price * 2 - 10000);
+  // Mock Cloudflare D1 binding
+  const mem = new Map();
+  const mockDb = {
+    prepare(sql) {
+      let args = [];
+      return {
+        bind(...a) {
+          args = a;
+          return this;
+        },
+        async run() {
+          if (sql.includes('INSERT INTO posnic_docs')) {
+            mem.set(`${args[0]}:${args[1]}`, args[2]);
+          } else if (sql.includes('DELETE FROM posnic_docs')) {
+            mem.delete(`${args[0]}:${args[1]}`);
+          }
+          return { success: true };
+        },
+        async all() {
+          const results = [];
+          for (const [k, v] of mem.entries()) {
+            if (k.startsWith(`${args[0]}:`)) results.push({ data: v });
+          }
+          return { results };
+        },
+        async first() {
+          const v = mem.get(`${args[0]}:${args[1]}`);
+          return v ? { data: v } : null;
+        },
+      };
+    },
+  };
 
-  const afterSale = storage.getItems().find(i => i.sku === 'PRD-401');
-  assert.equal(afterSale.stock, initialStock - 2, 'Product stock must decrement by sold quantity');
-
-  // Void transaction and verify stock is restored
-  storage.voidTransaction(txId);
-  const afterVoid = storage.getItems().find(i => i.sku === 'PRD-401');
-  assert.equal(afterVoid.stock, initialStock, 'Voiding bill must restore product stock');
-
-  // Cleanup test rows
-  storage.db.prepare('DELETE FROM pos_transactions WHERE id = ?').run(txId);
-  storage.db.prepare('DELETE FROM customers WHERE phone = ?').run('+62811000999');
-});
-
-test('3: Analytics calculation and RFC 4180 CSV formula-injection escaping', () => {
-  assert.equal(shared.escapeCsvCell('=1+1'), '"\'=1+1"');
-  assert.equal(shared.escapeCsvCell('@SUM(A1)'), '"\'@SUM(A1)"');
-
-  const sampleTx = [
-    {
-      id: 'INV-1',
-      status: 'COMPLETED',
-      date: new Date().toISOString(),
-      customerName: 'Reza',
-      cashierName: 'Andi',
-      paymentMethod: 'QRIS',
-      subtotal: 85000,
-      discount: 0,
-      taxRate: 0,
-      taxAmount: 0,
-      total: 85000,
-      amountPaid: 85000,
-      changeDue: 0,
-      items: [{ sku: 'SVC-101', name: 'Signature Haircut', category: 'Haircuts & Styling', price: 85000, qty: 1 }]
-    }
-  ];
-
-  const analytics = shared.computePosAnalytics(sampleTx, shared.DEFAULT_POS_ITEMS);
-  assert.equal(analytics.totalBills, 1);
-  assert.equal(analytics.totalRevenue, 85000);
-  assert.equal(analytics.byMethod.QRIS, 85000);
-
-  const csv = shared.buildSalesCsvExport(sampleTx);
-  assert.ok(csv.csvContent.includes('"Invoice ID","Status"'));
-  assert.ok(csv.csvContent.includes('"INV-1","COMPLETED"'));
-});
-
-test('4: Cloudflare Pages Edge Router (/api/pos/bootstrap and /api/pos/transactions)', async () => {
-  const bootstrapRes = await edgeApi.onRequest({
-    request: new Request('https://pos.macisla.com/api/pos/bootstrap'),
-    env: {}
+  const res = await onRequest({
+    request: new Request('https://pos.macisla.com/dashboard/getOverview?filter=day'),
+    env: { DB: mockDb },
+    next: async () => new Response('not-called', { status: 404 }),
   });
-  assert.equal(bootstrapRes.status, 200);
-  const bData = await bootstrapRes.json();
-  assert.equal(bData.ok, true);
-  assert.ok(Array.isArray(bData.items) && bData.items.length >= 10);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.type, 'success');
+  assert.ok(body.data.kpis.total_sales > 0);
 });

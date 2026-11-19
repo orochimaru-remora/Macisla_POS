@@ -1,5 +1,5 @@
 name = "macisla-pos"
-compatibility_date = "2026-10-01"
+compatibility_date = "2025-01-01"
 pages_build_output_dir = "."
 
 [[d1_databases]]
@@ -8,5 +8,5 @@ database_name = "macisla"
 database_id = "9d540277-0b77-42eb-bbea-405145543d95"
 
 [[r2_buckets]]
-binding = "BUCKET"
+binding = "R2_BUCKET"
 bucket_name = "macisla"

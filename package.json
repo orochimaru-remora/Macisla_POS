@@ -1,7 +1,8 @@
 {
   "name": "macisla-pos",
   "version": "1.0.0",
-  "description": "Standalone Posnic-style POS & 80mm Thermal Receipt System on Cloudflare Pages, D1, R2, and Local SQLite (pos.macisla.com)",
+  "type": "module",
+  "description": "Original Posnic POS UI/UX & pipeline routed to Cloudflare Pages, D1, R2, and Local SQLite (pos.macisla.com)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -1,29 +1,37 @@
-# Macisla POS (`pos.macisla.com`)
+# Macisla_POS (`pos.macisla.com`)
 
-Standalone Posnic-style Point of Sale, Retail Inventory, Customer Directory, Shift Z-Report, and 80mm Thermal Receipt system built natively on **Cloudflare Pages + Cloudflare D1 + Cloudflare R2** with a zero-dependency **Local Node + SQLite (`node:sqlite`)** server for offline shop operation.
+**100% original [Posnic POS](https://github.com/Posnic/POS) frontend UI/UX & workflow**, routed to a lightweight **Cloudflare Pages Functions + Cloudflare D1 + Cloudflare R2** backend (zero MongoDB, zero Express/VPS required).
 
----
+## Architecture
 
-## Modules Included
+- **Frontend (Unmodified Posnic Build)**: `login.html`, `dashboard.html`, `script/`, `style/`, `static/`, `fonts/`, `languages/`, `sw.js` — served directly from Cloudflare Pages CDN edge (`_routes.json` excludes all static assets from Worker invocations).
+- **Cloudflare Backend (`functions/[[path]].js` + `posnic-engine.mjs`)**: Implements Posnic's REST API protocol (`{ type: "success", data: ... }`) on top of **Cloudflare D1** (`macisla`, UUID `9d540277-0b77-42eb-bbea-405145543d95`) and **Cloudflare R2** (`macisla` bucket, `pos/*` prefix).
+- **Local Dev Server (`server.js` + `storage.js`)**: Runs the exact same `posnic-engine.mjs` against a local SQLite database (`data/macisla_pos.db`) using Node's built-in `node:sqlite` (zero npm dependencies).
 
-1. **💳 POS Register (`F1`)** — Fast barcode/SKU scan (`/` to focus, `Enter` to add exact SKU), category tabs, service & retail product tiles with live stock badges, customer picker (`customers` shared with Macisla D1), Barber/Staff assignment, **Hold / Recall Bills**, percentage/Rp discounts, `Cash` / `QRIS` / `Card` / `Transfer` tender pad, and **Complete & Print 80mm Receipt (`F9`)**.
-2. **📦 Items & Stock (`F2`)** — Full service and retail inventory table with SKU, cost price, selling price, live stock count, low-stock alerts (`stock <= min_stock`), `+10 Stock` quick restock, Add/Edit/Delete modal, and **Export Inventory CSV**.
-3. **👥 Customers (`F3`)** — Shared Cloudflare D1 `customers` directory showing visit/bill counts, lifetime POS spend, notes/preferences, and 1-click **Load in Register**.
-4. **📊 Sales & Z-Report (`F4`)** — Today's & All-Time net revenue, average ticket, Cash vs. Cashless split, searchable Invoice ledger, **Reprint 80mm Receipt**, **Void Bill (automatically restores product stock)**, **Print 80mm Shift Close (Z-Report)**, and **Export Sales CSV**.
-5. **⚙️ Store & Printer (`F5`)** — Store header/address/phone/footer settings, default tax/service %, 80mm/58mm thermal layout selector, and Chrome `--kiosk-printing` instructions.
-
----
-
-## Local Run & Test
+## Quick Start (Local)
 
 ```bash
-node --test test/pos.test.js
-node server.js
-# Opens on http://127.0.0.1:3088
+npm start
+# Open http://127.0.0.1:3088/login.html
 ```
 
-## Deploying to `pos.macisla.com` on Cloudflare Pages
+Default logins (and one-click demo buttons on `login.html`):
+- **Admin**: `admin` / `admin`
+- **Manager**: `manager` / `manager`
+- **Cashier**: `cashier` / `cashier`
 
-1. Create a Cloudflare Pages project connected to `orochimaru-remora/Macisla_POS`.
-2. Bind D1 database `DB` (`macisla` — `9d540277-0b77-42eb-bbea-405145543d95`) and R2 bucket `BUCKET` (`macisla`), or deploy via `npx wrangler pages deploy .`.
-3. Add custom domain `pos.macisla.com` and optional environment variable `BARBER_PIN` (4-digit cashier PIN).
+## Deploy to `pos.macisla.com` (Cloudflare Pages)
+
+1. Connect `orochimaru-remora/Macisla_POS` in **Cloudflare Dashboard → Workers & Pages → Create → Pages**.
+2. Build command: *(leave empty)* · Build output directory: `.`
+3. Bind your existing Cloudflare resources in **Settings → Bindings** (already declared in `wrangler.toml`):
+   - **D1 Database**: Variable `DB` → `macisla` (`9d540277-0b77-42eb-bbea-405145543d95`)
+   - **R2 Bucket**: Variable `R2_BUCKET` → `macisla`
+4. Add custom domain `pos.macisla.com` under **Custom domains**.
+5. Optional: run `wrangler d1 execute macisla --remote --file=schema.sql` (the table also self-initializes automatically on the first request).
+
+## Run Tests
+
+```bash
+npm test
+```

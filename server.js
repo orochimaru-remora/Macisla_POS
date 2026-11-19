@@ -1,261 +1,115 @@
-/**
- * Macisla_POS Standalone Local Development & Shop Counter Server
- * Zero external npm dependencies required — uses Node built-in `http`, `fs`, and `node:sqlite`.
- */
+// Local development server for Macisla_POS (serves 100% original Posnic frontend + D1-compatible SQLite backend)
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createLocalStore } from './storage.js';
+import { handlePosnicRequest } from './posnic-engine.mjs';
 
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
-const storage = require('./storage');
-const mw = require('./functions/_middleware.js');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PORT = Number(process.env.POS_PORT || process.env.PORT || 3088);
+const HOST = process.env.POS_HOST || '127.0.0.1';
+const DATA_DIR = process.env.POS_DATA_DIR || path.join(__dirname, 'data');
 
-// Load optional .dev.vars or .env
-for (const envFile of [path.join(__dirname, '.dev.vars'), path.join(__dirname, '.env')]) {
-  if (fs.existsSync(envFile)) {
-    fs.readFileSync(envFile, 'utf8').split(/\r?\n/).forEach(line => {
-      const t = line.trim();
-      if (!t || t.startsWith('#')) return;
-      const idx = t.indexOf('=');
-      if (idx > 0) {
-        const k = t.slice(0, idx).trim();
-        const v = t.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '');
-        if (!process.env[k]) process.env[k] = v;
-      }
-    });
-  }
-}
-
-const PORT = Number(process.env.POS_PORT || process.env.PORT) || 3088;
-const HOST = process.env.HOST || '127.0.0.1';
-
-const MIME_TYPES = {
+const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
   '.mjs': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
   '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.eot': 'application/vnd.ms-fontobject',
+  '.otf': 'font/otf',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
 };
 
-function readJsonBody(req) {
-  return new Promise((resolve) => {
-    const chunks = [];
-    req.on('data', c => chunks.push(c));
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
-      } catch (_) {
-        resolve({});
-      }
-    });
-    req.on('error', () => resolve({}));
-  });
+function resolveStaticFile(urlPath) {
+  let clean = decodeURIComponent(urlPath.split('?')[0]);
+  if (clean === '/' || clean === '') clean = '/index.html';
+  if (clean.startsWith('/public/')) clean = clean.slice('/public'.length);
+
+  // Never expose backend files or data directory over HTTP
+  const blocked = ['/server.js', '/storage.js', '/posnic-engine.mjs', '/package.json', '/wrangler.toml', '/schema.sql', '/_routes.json'];
+  if (blocked.includes(clean) || clean.startsWith('/functions/') || clean.startsWith('/data/') || clean.startsWith('/test/') || clean.startsWith('/.git')) {
+    return null;
+  }
+
+  const candidate = path.resolve(__dirname, '.' + clean);
+  if (!candidate.startsWith(__dirname)) return null;
+  if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+    return candidate;
+  }
+  return null;
 }
 
-function sendJson(res, status, data, extraHeaders = {}) {
-  const payload = JSON.stringify(data);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    ...mw.SECURITY_HEADERS,
-    ...extraHeaders
+export function startServer({ port = PORT, host = HOST, dataDir = DATA_DIR } = {}) {
+  const store = createLocalStore(dataDir);
+
+  const server = http.createServer(async (req, res) => {
+    try {
+      const method = (req.method || 'GET').toUpperCase();
+      const rawUrl = req.url || '/';
+
+      if (method === 'GET' || method === 'HEAD') {
+        const staticFile = resolveStaticFile(rawUrl);
+        if (staticFile) {
+          const ext = path.extname(staticFile).toLowerCase();
+          const headers = {
+            'content-type': MIME[ext] || 'application/octet-stream',
+            'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=3600',
+          };
+          res.writeHead(200, headers);
+          if (method === 'HEAD') return res.end();
+          return fs.createReadStream(staticFile).pipe(res);
+        }
+      }
+
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const bodyBuf = Buffer.concat(chunks);
+
+      const fullUrl = `http://${req.headers.host || `${host}:${port}`}${rawUrl}`;
+      const webReq = new Request(fullUrl, {
+        method,
+        headers: req.headers,
+        body: method === 'GET' || method === 'HEAD' || bodyBuf.length === 0 ? undefined : bodyBuf,
+      });
+
+      const webRes = await handlePosnicRequest(webReq, store, {});
+      const outHeaders = {};
+      webRes.headers.forEach((v, k) => {
+        outHeaders[k] = v;
+      });
+      res.writeHead(webRes.status, outHeaders);
+      const ab = await webRes.arrayBuffer();
+      res.end(Buffer.from(ab));
+    } catch (err) {
+      console.error('[Macisla_POS]', err);
+      res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ type: 'error', message: err.message || 'Internal Server Error' }));
+    }
   });
-  res.end(payload);
+
+  server.on('close', () => store.close());
+  return { server, store };
 }
 
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  const pathname = url.pathname.replace(/\/+$/, '') || '/';
-  const method = (req.method || 'GET').toUpperCase();
-
-  // Block sensitive internal files
-  const lower = pathname.toLowerCase();
-  if (
-    lower.startsWith('/.env') ||
-    lower.startsWith('/.dev.vars') ||
-    lower.startsWith('/.git') ||
-    lower.startsWith('/data') ||
-    lower.endsWith('.db') ||
-    lower.endsWith('.sql') ||
-    lower.endsWith('.toml')
-  ) {
-    res.writeHead(404, { 'Content-Type': 'text/plain', ...mw.SECURITY_HEADERS });
-    return res.end('Not Found');
-  }
-
-  const expectedPin = mw.getExpectedPin(process.env);
-  const signingSecret = expectedPin ? mw.getSigningSecret(process.env, expectedPin) : '';
-  const clientIp = req.socket?.remoteAddress || '127.0.0.1';
-
-  // PIN verification route
-  if (pathname === '/api/verify-pin' && method === 'POST') {
-    if (!expectedPin) {
-      return sendJson(res, 503, { ok: false, error: 'PIN not configured' });
-    }
-    const lock = mw.getPinLockoutStatus(clientIp);
-    if (lock.locked) {
-      return sendJson(res, 429, {
-        ok: false,
-        locked: true,
-        retryAfterSeconds: lock.retryAfterSeconds,
-        error: `Locked for ${Math.ceil(lock.retryAfterSeconds / 60)}m`
-      });
-    }
-    const body = await readJsonBody(req);
-    const submitted = String(body.pin || '').trim();
-    if (submitted !== expectedPin) {
-      const fail = mw.recordPinFailure(clientIp);
-      return sendJson(res, fail.locked ? 429 : 401, {
-        ok: false,
-        locked: fail.locked,
-        remainingAttempts: fail.remainingAttempts,
-        error: fail.locked ? 'Locked for 15 minutes' : `Invalid PIN (${fail.remainingAttempts} left)`
-      });
-    }
-    mw.clearPinFailures(clientIp);
-    const token = await mw.createSessionToken(signingSecret);
-    return sendJson(res, 200, { ok: true }, {
-      'Set-Cookie': `${mw.COOKIE_NAME}=${token}; Path=/; Max-Age=${mw.SESSION_DURATION_SEC}; HttpOnly; SameSite=Lax`
-    });
-  }
-
-  // Enforce PIN gate if BARBER_PIN / POS_PIN is configured
-  if (expectedPin) {
-    const token = mw.parseCookie(req.headers.cookie || '', mw.COOKIE_NAME);
-    const valid = await mw.verifySessionToken(token, signingSecret);
-    if (!valid) {
-      if (pathname.startsWith('/api/')) {
-        return sendJson(res, 401, { ok: false, error: 'POS PIN session required' });
-      }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...mw.SECURITY_HEADERS });
-      return res.end(mw.renderPinGateHtml());
-    }
-  }
-
-  try {
-    // 1. GET /api/pos/bootstrap
-    if (pathname === '/api/pos/bootstrap' && method === 'GET') {
-      return sendJson(res, 200, storage.getBootstrapData());
-    }
-
-    // 2. GET & POST /api/pos/items
-    if (pathname === '/api/pos/items' && method === 'GET') {
-      return sendJson(res, 200, { ok: true, items: storage.getItems() });
-    }
-    if (pathname === '/api/pos/items' && method === 'POST') {
-      const body = await readJsonBody(req);
-      const result = storage.saveItem(body);
-      return sendJson(res, 200, { ok: true, ...result, items: storage.getItems() });
-    }
-
-    // 3. GET & POST /api/pos/customers
-    if (pathname === '/api/pos/customers' && method === 'GET') {
-      const q = url.searchParams.get('q') || '';
-      return sendJson(res, 200, { ok: true, customers: storage.getCustomers(q) });
-    }
-    if (pathname === '/api/pos/customers' && method === 'POST') {
-      const body = await readJsonBody(req);
-      const customer = storage.saveCustomer(body);
-      return sendJson(res, 200, { ok: true, customer, customers: storage.getCustomers() });
-    }
-
-    // 4. GET & POST /api/pos/transactions
-    if (pathname === '/api/pos/transactions' && method === 'GET') {
-      const limit = url.searchParams.get('limit') || 250;
-      return sendJson(res, 200, { ok: true, transactions: storage.getTransactions(limit) });
-    }
-    if (pathname === '/api/pos/transactions' && method === 'POST') {
-      const body = await readJsonBody(req);
-      if (body.action === 'void' && body.id) {
-        const out = storage.voidTransaction(body.id);
-        return sendJson(res, 200, { ok: true, ...out });
-      }
-      if (Array.isArray(body.transactions)) {
-        const synced = body.transactions.map(t => storage.saveTransaction(t));
-        return sendJson(res, 200, { ok: true, syncedCount: synced.length, transactions: synced });
-      }
-      const transaction = storage.saveTransaction(body);
-      return sendJson(res, 200, { ok: true, transaction });
-    }
-
-    // 5. GET & POST /api/pos/settings
-    if (pathname === '/api/pos/settings' && method === 'GET') {
-      return sendJson(res, 200, { ok: true, settings: storage.getSettings() });
-    }
-    if (pathname === '/api/pos/settings' && method === 'POST') {
-      const body = await readJsonBody(req);
-      const settings = storage.saveSettings(body);
-      return sendJson(res, 200, { ok: true, settings });
-    }
-
-    // 6. CSV Exports
-    if (pathname === '/api/pos/export/sales.csv' && method === 'GET') {
-      const csv = storage.buildSalesCsvExport(storage.getTransactions(5000));
-      res.writeHead(200, {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${csv.filename}"`,
-        ...mw.SECURITY_HEADERS
-      });
-      return res.end(csv.csvContent);
-    }
-
-    if (pathname === '/api/pos/export/inventory.csv' && method === 'GET') {
-      const csv = storage.buildInventoryCsvExport(storage.getItems());
-      res.writeHead(200, {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${csv.filename}"`,
-        ...mw.SECURITY_HEADERS
-      });
-      return res.end(csv.csvContent);
-    }
-
-    if (pathname.startsWith('/api/')) {
-      return sendJson(res, 404, { ok: false, error: `Unknown API route: ${pathname}` });
-    }
-
-    // Serve static files or SPA index.html
-    const spaRoutes = ['/', '/register', '/inventory', '/customers', '/reports', '/settings'];
-    const targetFile = spaRoutes.includes(pathname)
-      ? path.join(__dirname, 'index.html')
-      : path.join(__dirname, pathname.replace(/^\/+/, ''));
-
-    if (!path.resolve(targetFile).startsWith(path.resolve(__dirname))) {
-      res.writeHead(403);
-      return res.end('Forbidden');
-    }
-
-    if (fs.existsSync(targetFile) && fs.statSync(targetFile).isFile()) {
-      const ext = path.extname(targetFile).toLowerCase();
-      res.writeHead(200, {
-        'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
-        ...mw.SECURITY_HEADERS
-      });
-      return fs.createReadStream(targetFile).pipe(res);
-    }
-
-    res.writeHead(404, { 'Content-Type': 'text/plain', ...mw.SECURITY_HEADERS });
-    res.end('Not Found');
-  } catch (err) {
-    console.error('[Macisla_POS Server] Error:', err);
-    sendJson(res, 400, { ok: false, error: err.message || 'Bad request' });
-  }
-});
-
-if (require.main === module) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const { server } = startServer();
   server.listen(PORT, HOST, () => {
-    console.log('');
-    console.log('  ╔════════════════════════════════════════════════════════╗');
-    console.log('  ║  💳 MACISLA POS — Standalone Register & Back-Office    ║');
-    console.log('  ║  🗄️  Storage: Cloudflare D1 + R2 + Local SQLite        ║');
-    console.log('  ║  🖨️  Printer: 80mm / 58mm Thermal (@media print)       ║');
-    console.log(`  ║  🌐 Live URL: http://${HOST}:${PORT}                    ║`);
-    console.log('  ╚════════════════════════════════════════════════════════╝');
-    console.log('');
+    console.log(`Macisla_POS (Original Posnic UI + Cloudflare D1/R2 Adapter) listening on http://${HOST}:${PORT}`);
   });
 }
-
-module.exports = server;
