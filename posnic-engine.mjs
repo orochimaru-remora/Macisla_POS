@@ -919,12 +919,12 @@ export async function handlePosnicRequest(request, store, env = {}) {
   }
   if (pathname === '/runtime-info') {
     return jsonResp({
-      demo: true,
+      demo: false,
       version: '1.9.2',
       edition: 'cloud',
       mode: 'cloud',
       cloud: false,
-      features: { account: false, demo: true },
+      features: { account: false, demo: false },
     });
   }
   if (pathname === '/brand.json') {

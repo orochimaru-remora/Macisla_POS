@@ -31,9 +31,9 @@ test('Original Posnic static UI + full POS login, dashboard, checkout, hold, and
     const fontRes = await fetch(`${base}/fonts/fontawesome-webfont.woff2`);
     assert.equal(fontRes.status, 200);
 
-    // 2. Demo mode runtime-info enables Posnic's 1-click admin/manager/cashier login buttons
+    // 2. Runtime-info disables Posnic's demo upsell popup ("Making this shop yours?")
     const runtimeRes = await fetch(`${base}/runtime-info`).then((r) => r.json());
-    assert.equal(runtimeRes.demo, true);
+    assert.equal(runtimeRes.demo, false);
     assert.equal(runtimeRes.version, '1.9.2');
 
     // 3. Exact Posnic login sequence: verify -> default branch -> register -> ACL -> settings
