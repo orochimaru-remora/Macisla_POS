@@ -3,18 +3,18 @@
 // in the local POS UI (`http://127.0.0.1:3088`). Commit & push to deploy changes to Cloudflare D1.
 
 export const SYNC_COLLECTIONS = [
-  'branches',
-  'users',
-  'registers',
-  'taxes',
-  'payments',
-  'units',
-  'denominations',
-  'categories',
-  'suppliers',
-  'customers',
-  'items',
-  'meta',
+  "branches",
+  "users",
+  "registers",
+  "taxes",
+  "payments",
+  "units",
+  "denominations",
+  "categories",
+  "suppliers",
+  "customers",
+  "items",
+  "meta"
 ];
 
 export const DEFAULT_BRANCH_ID = '665000000000000000000010';
@@ -165,7 +165,9 @@ export const SEED_DATA = {
       "first_run_done": true,
       "first_run_decided": true,
       "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      "updated_date": "2026-11-19T00:00:00.000Z",
+      "print_a4html": "<div class=\"receipt-a4\" style=\"font-family:Arial,sans-serif;padding:16px;\">\n  <h3 class=\"print_store_name\" style=\"margin:0 0 4px;\">Macisla Main Store</h3>\n  <div class=\"print_store_address\" style=\"font-size:12px;color:#555;\">Jl. Senopati No. 88, Jakarta</div>\n  <hr/>\n  <div id=\"print_items_body\"></div>\n  <hr/>\n  <div class=\"footer-content\" style=\"text-align:center;font-size:12px;\">Thank you for visiting Macisla!</div>\n</div>",
+      "print_standard_html": "<div class=\"receipt-thermal\" style=\"font-family:monospace;width:80mm;padding:6px;\">\n  <div class=\"print_store_name\" style=\"text-align:center;font-weight:bold;font-size:15px;\">Macisla Main Store</div>\n  <div class=\"print_store_address\" style=\"text-align:center;font-size:11px;\">Jl. Senopati No. 88, Jakarta</div>\n  <hr style=\"border-top:1px dashed #000;\"/>\n  <div id=\"print_items_body\"></div>\n  <hr style=\"border-top:1px dashed #000;\"/>\n  <div class=\"footer-content\" style=\"text-align:center;font-size:11px;\">Thank you for visiting Macisla!</div>\n</div>"
     }
   ],
   "users": [
@@ -188,7 +190,128 @@ export const SEED_DATA = {
         "665000000000000000000010"
       ],
       "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      "updated_date": "2026-11-19T00:00:00.000Z",
+      "access": {
+        "dashboard": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "sales": {
+          "read": true,
+          "write": true,
+          "delete": true,
+          "session_filter": false
+        },
+        "item": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "category": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "customer": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "supplier": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "receiving": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "expense": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "user": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "branch": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "register": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "setting": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "report": {
+          "read": true,
+          "write": true,
+          "delete": false
+        },
+        "quote": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "invoice": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "coupon": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "tax": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "payment": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "unit": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "variant": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "stocklog": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "kot": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "pos": {
+          "discount": true,
+          "price_override": true,
+          "void_sale": true,
+          "refund_sale": true,
+          "open_drawer": true,
+          "discount_max_percent": 100
+        }
+      }
     },
     {
       "_id": "665000000000000000000002",
@@ -209,7 +332,128 @@ export const SEED_DATA = {
         "665000000000000000000010"
       ],
       "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      "updated_date": "2026-11-19T00:00:00.000Z",
+      "access": {
+        "dashboard": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "sales": {
+          "read": true,
+          "write": true,
+          "delete": true,
+          "session_filter": false
+        },
+        "item": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "category": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "customer": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "supplier": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "receiving": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "expense": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "user": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "branch": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "register": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "setting": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "report": {
+          "read": true,
+          "write": true,
+          "delete": false
+        },
+        "quote": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "invoice": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "coupon": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "tax": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "payment": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "unit": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "variant": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "stocklog": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "kot": {
+          "read": true,
+          "write": true,
+          "delete": true
+        },
+        "pos": {
+          "discount": true,
+          "price_override": true,
+          "void_sale": true,
+          "refund_sale": true,
+          "open_drawer": true,
+          "discount_max_percent": 100
+        }
+      }
     },
     {
       "_id": "665000000000000000000003",
@@ -230,7 +474,128 @@ export const SEED_DATA = {
         "665000000000000000000010"
       ],
       "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      "updated_date": "2026-11-19T00:00:00.000Z",
+      "access": {
+        "dashboard": {
+          "read": true,
+          "write": true,
+          "delete": false
+        },
+        "sales": {
+          "read": true,
+          "write": true,
+          "delete": false,
+          "session_filter": false
+        },
+        "item": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "category": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "customer": {
+          "read": true,
+          "write": true,
+          "delete": false
+        },
+        "supplier": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "receiving": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "expense": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "user": {
+          "read": false,
+          "write": false,
+          "delete": false
+        },
+        "branch": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "register": {
+          "read": true,
+          "write": true,
+          "delete": false
+        },
+        "setting": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "report": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "quote": {
+          "read": true,
+          "write": true,
+          "delete": false
+        },
+        "invoice": {
+          "read": true,
+          "write": true,
+          "delete": false
+        },
+        "coupon": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "tax": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "payment": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "unit": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "variant": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "stocklog": {
+          "read": true,
+          "write": false,
+          "delete": false
+        },
+        "kot": {
+          "read": true,
+          "write": true,
+          "delete": false
+        },
+        "pos": {
+          "discount": true,
+          "price_override": false,
+          "void_sale": false,
+          "refund_sale": false,
+          "open_drawer": true,
+          "discount_max_percent": 20
+        }
+      }
     }
   ],
   "registers": [
@@ -323,27 +688,169 @@ export const SEED_DATA = {
     }
   ],
   "units": [
-    { "_id": "665000000000000000000701", "id": "665000000000000000000701", "unit_name": "qty", "unit_short": "qty", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000702", "id": "665000000000000000000702", "unit_name": "pcs", "unit_short": "pcs", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000703", "id": "665000000000000000000703", "unit_name": "session", "unit_short": "session", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000704", "id": "665000000000000000000704", "unit_name": "bottle", "unit_short": "bottle", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000705", "id": "665000000000000000000705", "unit_name": "box", "unit_short": "box", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000706", "id": "665000000000000000000706", "unit_name": "kg", "unit_short": "kg", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" }
+    {
+      "_id": "665000000000000000000701",
+      "id": "665000000000000000000701",
+      "unit_name": "qty",
+      "unit_short": "qty",
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000702",
+      "id": "665000000000000000000702",
+      "unit_name": "pcs",
+      "unit_short": "pcs",
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000703",
+      "id": "665000000000000000000703",
+      "unit_name": "session",
+      "unit_short": "session",
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000704",
+      "id": "665000000000000000000704",
+      "unit_name": "bottle",
+      "unit_short": "bottle",
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000705",
+      "id": "665000000000000000000705",
+      "unit_name": "box",
+      "unit_short": "box",
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000706",
+      "id": "665000000000000000000706",
+      "unit_name": "kg",
+      "unit_short": "kg",
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    }
   ],
   "denominations": [
-    { "_id": "665000000000000000000801", "id": "665000000000000000000801", "denom_value": "100000", "denomination": 100000, "value": 100000, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000802", "id": "665000000000000000000802", "denom_value": "50000", "denomination": 50000, "value": 50000, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000803", "id": "665000000000000000000803", "denom_value": "20000", "denomination": 20000, "value": 20000, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000804", "id": "665000000000000000000804", "denom_value": "10000", "denomination": 10000, "value": 10000, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000805", "id": "665000000000000000000805", "denom_value": "5000", "denomination": 5000, "value": 5000, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000806", "id": "665000000000000000000806", "denom_value": "2000", "denomination": 2000, "value": 2000, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000807", "id": "665000000000000000000807", "denom_value": "1000", "denomination": 1000, "value": 1000, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" }
+    {
+      "_id": "665000000000000000000801",
+      "id": "665000000000000000000801",
+      "denom_value": "100000",
+      "denomination": 100000,
+      "value": 100000,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000802",
+      "id": "665000000000000000000802",
+      "denom_value": "50000",
+      "denomination": 50000,
+      "value": 50000,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000803",
+      "id": "665000000000000000000803",
+      "denom_value": "20000",
+      "denomination": 20000,
+      "value": 20000,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000804",
+      "id": "665000000000000000000804",
+      "denom_value": "10000",
+      "denomination": 10000,
+      "value": 10000,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000805",
+      "id": "665000000000000000000805",
+      "denom_value": "5000",
+      "denomination": 5000,
+      "value": 5000,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000806",
+      "id": "665000000000000000000806",
+      "denom_value": "2000",
+      "denomination": 2000,
+      "value": 2000,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000807",
+      "id": "665000000000000000000807",
+      "denom_value": "1000",
+      "denomination": 1000,
+      "value": 1000,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    }
   ],
   "categories": [
-    { "_id": "665000000000000000000201", "id": "665000000000000000000201", "name": "Haircuts & Grooming", "category_name": "Haircuts & Grooming", "description": "Haircuts, fades, styling, beard trims & hot towel treatments", "image": "category.svg", "tile_color": "#2563EB", "tile_shape": "rounded", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000202", "id": "665000000000000000000202", "name": "Hair Care Products", "category_name": "Hair Care Products", "description": "Pomades, matte clay, sea salt spray, beard oil & shampoo", "image": "category.svg", "tile_color": "#0D9488", "tile_shape": "rounded", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000203", "id": "665000000000000000000203", "name": "Beverages", "category_name": "Beverages", "description": "Specialty coffee, cold brew & refreshments", "image": "category.svg", "tile_color": "#D97706", "tile_shape": "rounded", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000204", "id": "665000000000000000000204", "name": "General", "category_name": "General", "description": "General retail items", "image": "category.svg", "tile_color": "#64748B", "tile_shape": "rounded", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" }
+    {
+      "_id": "665000000000000000000201",
+      "id": "665000000000000000000201",
+      "name": "Haircuts & Grooming",
+      "category_name": "Haircuts & Grooming",
+      "description": "Haircuts, fades, styling, beard trims & hot towel treatments",
+      "image": "category.svg",
+      "tile_color": "#2563EB",
+      "tile_shape": "rounded",
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000202",
+      "id": "665000000000000000000202",
+      "name": "Hair Care Products",
+      "category_name": "Hair Care Products",
+      "description": "Pomades, matte clay, sea salt spray, beard oil & shampoo",
+      "image": "category.svg",
+      "tile_color": "#0D9488",
+      "tile_shape": "rounded",
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000203",
+      "id": "665000000000000000000203",
+      "name": "Beverages",
+      "category_name": "Beverages",
+      "description": "Specialty coffee, cold brew & refreshments",
+      "image": "category.svg",
+      "tile_color": "#D97706",
+      "tile_shape": "rounded",
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000204",
+      "id": "665000000000000000000204",
+      "name": "General",
+      "category_name": "General",
+      "description": "General retail items",
+      "image": "category.svg",
+      "tile_color": "#64748B",
+      "tile_shape": "rounded",
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    }
   ],
   "suppliers": [
     {
@@ -363,26 +870,195 @@ export const SEED_DATA = {
     }
   ],
   "customers": [
-    { "_id": "665000000000000000000301", "id": "665000000000000000000301", "name": "Walk-in Customer", "customer_name": "Walk-in Customer", "phone": "0000000000", "email": "walkin@macisla.com", "address": "Jakarta", "city": "Jakarta", "state": "DKI Jakarta", "country": "Indonesia", "customer_balance": 0, "wallet_amount": 0, "partial_balance": 0, "is_default": true, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000302", "id": "665000000000000000000302", "name": "Andi Pratama", "customer_name": "Andi Pratama", "phone": "+62 812-1111-2233", "email": "andi@example.com", "address": "Jl. Dharmawangsa No. 4, Jakarta", "city": "Jakarta", "state": "DKI Jakarta", "country": "Indonesia", "customer_balance": 0, "wallet_amount": 0, "partial_balance": 0, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000303", "id": "665000000000000000000303", "name": "Budi Santoso", "customer_name": "Budi Santoso", "phone": "+62 813-4444-5566", "email": "budi@example.com", "address": "Jl. Gunawarman No. 19, Jakarta", "city": "Jakarta", "state": "DKI Jakarta", "country": "Indonesia", "customer_balance": 0, "wallet_amount": 0, "partial_balance": 0, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000304", "id": "665000000000000000000304", "name": "Rina Kusuma", "customer_name": "Rina Kusuma", "phone": "+62 811-7777-8899", "email": "rina@example.com", "address": "SCBD Lot 8, Jakarta", "city": "Jakarta", "state": "DKI Jakarta", "country": "Indonesia", "customer_balance": 0, "wallet_amount": 0, "partial_balance": 0, "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" }
+    {
+      "_id": "665000000000000000000301",
+      "id": "665000000000000000000301",
+      "name": "Walk-in Customer",
+      "customer_name": "Walk-in Customer",
+      "phone": "0000000000",
+      "email": "walkin@macisla.com",
+      "address": "Jakarta",
+      "city": "Jakarta",
+      "state": "DKI Jakarta",
+      "country": "Indonesia",
+      "customer_balance": 0,
+      "wallet_amount": 0,
+      "partial_balance": 0,
+      "is_default": true,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000302",
+      "id": "665000000000000000000302",
+      "name": "Andi Pratama",
+      "customer_name": "Andi Pratama",
+      "phone": "+62 812-1111-2233",
+      "email": "andi@example.com",
+      "address": "Jl. Dharmawangsa No. 4, Jakarta",
+      "city": "Jakarta",
+      "state": "DKI Jakarta",
+      "country": "Indonesia",
+      "customer_balance": 0,
+      "wallet_amount": 0,
+      "partial_balance": 0,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000303",
+      "id": "665000000000000000000303",
+      "name": "Budi Santoso",
+      "customer_name": "Budi Santoso",
+      "phone": "+62 813-4444-5566",
+      "email": "budi@example.com",
+      "address": "Jl. Gunawarman No. 19, Jakarta",
+      "city": "Jakarta",
+      "state": "DKI Jakarta",
+      "country": "Indonesia",
+      "customer_balance": 0,
+      "wallet_amount": 0,
+      "partial_balance": 0,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    },
+    {
+      "_id": "665000000000000000000304",
+      "id": "665000000000000000000304",
+      "name": "Rina Kusuma",
+      "customer_name": "Rina Kusuma",
+      "phone": "+62 811-7777-8899",
+      "email": "rina@example.com",
+      "address": "SCBD Lot 8, Jakarta",
+      "city": "Jakarta",
+      "state": "DKI Jakarta",
+      "country": "Indonesia",
+      "customer_balance": 0,
+      "wallet_amount": 0,
+      "partial_balance": 0,
+      "created_date": "2026-11-19T00:00:00.000Z",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    }
   ],
   "items": [
-    { "_id": "665000000000000000000101", "id": "665000000000000000000101", "name": "Signature Gentleman Cut", "item_name": "Signature Gentleman Cut", "itemid": "MCS-001", "barcode_id": "8990001000017", "category_id": "665000000000000000000201", "category_name": "Haircuts & Grooming", "supplier_id": "665000000000000000000401", "supplier_name": "Macisla Supply Co.", "selling_price": 120000, "mrp_price": 120000, "company_price": 35000, "available_quantity": 99, "low_stock": 5, "track_inventory": false, "negative_stock": true, "available_for_sale": true, "item_kind": "service", "unit": "session", "tax": 0, "tax_type": "Exclusive", "tax_name": "No Tax (0%)", "discount_amount": 0, "discount_percentage": 0, "image": "item.svg", "tile_color": "#2563EB", "tile_shape": "rounded", "branch_id": "665000000000000000000010", "status": "Active", "created_by": "admin", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000102", "id": "665000000000000000000102", "name": "Skin Fade & Hot Towel", "item_name": "Skin Fade & Hot Towel", "itemid": "MCS-002", "barcode_id": "8990001000024", "category_id": "665000000000000000000201", "category_name": "Haircuts & Grooming", "supplier_id": "665000000000000000000401", "supplier_name": "Macisla Supply Co.", "selling_price": 150000, "mrp_price": 150000, "company_price": 45000, "available_quantity": 99, "low_stock": 5, "track_inventory": false, "negative_stock": true, "available_for_sale": true, "item_kind": "service", "unit": "session", "tax": 0, "tax_type": "Exclusive", "tax_name": "No Tax (0%)", "discount_amount": 0, "discount_percentage": 0, "image": "item.svg", "tile_color": "#1D4ED8", "tile_shape": "rounded", "branch_id": "665000000000000000000010", "status": "Active", "created_by": "admin", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000103", "id": "665000000000000000000103", "name": "Beard Trim & Lineup", "item_name": "Beard Trim & Lineup", "itemid": "MCS-003", "barcode_id": "8990001000031", "category_id": "665000000000000000000201", "category_name": "Haircuts & Grooming", "supplier_id": "665000000000000000000401", "supplier_name": "Macisla Supply Co.", "selling_price": 75000, "mrp_price": 75000, "company_price": 20000, "available_quantity": 99, "low_stock": 5, "track_inventory": false, "negative_stock": true, "available_for_sale": true, "item_kind": "service", "unit": "session", "tax": 0, "tax_type": "Exclusive", "tax_name": "No Tax (0%)", "discount_amount": 0, "discount_percentage": 0, "image": "item.svg", "tile_color": "#3B82F6", "tile_shape": "rounded", "branch_id": "665000000000000000000010", "status": "Active", "created_by": "admin", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000104", "id": "665000000000000000000104", "name": "AI Face Shape Styling Consult", "item_name": "AI Face Shape Styling Consult", "itemid": "MCS-004", "barcode_id": "8990001000048", "category_id": "665000000000000000000201", "category_name": "Haircuts & Grooming", "supplier_id": "665000000000000000000401", "supplier_name": "Macisla Supply Co.", "selling_price": 50000, "mrp_price": 50000, "company_price": 10000, "available_quantity": 99, "low_stock": 5, "track_inventory": false, "negative_stock": true, "available_for_sale": true, "item_kind": "service", "unit": "session", "tax": 0, "tax_type": "Exclusive", "tax_name": "No Tax (0%)", "discount_amount": 0, "discount_percentage": 0, "image": "item.svg", "tile_color": "#6366F1", "tile_shape": "rounded", "branch_id": "665000000000000000000010", "status": "Active", "created_by": "admin", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000105", "id": "665000000000000000000105", "name": "Macisla Matte Clay 100g", "item_name": "Macisla Matte Clay 100g", "itemid": "MCS-005", "barcode_id": "8990001000055", "category_id": "665000000000000000000202", "category_name": "Hair Care Products", "supplier_id": "665000000000000000000401", "supplier_name": "Macisla Supply Co.", "selling_price": 165000, "mrp_price": 165000, "company_price": 72000, "available_quantity": 28, "low_stock": 5, "track_inventory": true, "negative_stock": false, "available_for_sale": true, "item_kind": "product", "unit": "pcs", "tax": 0, "tax_type": "Exclusive", "tax_name": "No Tax (0%)", "discount_amount": 0, "discount_percentage": 0, "image": "item.svg", "tile_color": "#0D9488", "tile_shape": "rounded", "branch_id": "665000000000000000000010", "status": "Active", "created_by": "admin", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000106", "id": "665000000000000000000106", "name": "Water-Based Shine Pomade", "item_name": "Water-Based Shine Pomade", "itemid": "MCS-006", "barcode_id": "8990001000062", "category_id": "665000000000000000000202", "category_name": "Hair Care Products", "supplier_id": "665000000000000000000401", "supplier_name": "Macisla Supply Co.", "selling_price": 145000, "mrp_price": 145000, "company_price": 65000, "available_quantity": 22, "low_stock": 5, "track_inventory": true, "negative_stock": false, "available_for_sale": true, "item_kind": "product", "unit": "pcs", "tax": 0, "tax_type": "Exclusive", "tax_name": "No Tax (0%)", "discount_amount": 0, "discount_percentage": 0, "image": "item.svg", "tile_color": "#0F766E", "tile_shape": "rounded", "branch_id": "665000000000000000000010", "status": "Active", "created_by": "admin", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000107", "id": "665000000000000000000107", "name": "Sea Salt Texture Spray 150ml", "item_name": "Sea Salt Texture Spray 150ml", "itemid": "MCS-007", "barcode_id": "8990001000079", "category_id": "665000000000000000000202", "category_name": "Hair Care Products", "supplier_id": "665000000000000000000401", "supplier_name": "Macisla Supply Co.", "selling_price": 135000, "mrp_price": 135000, "company_price": 58000, "available_quantity": 18, "low_stock": 5, "track_inventory": true, "negative_stock": false, "available_for_sale": true, "item_kind": "product", "unit": "bottle", "tax": 0, "tax_type": "Exclusive", "tax_name": "No Tax (0%)", "discount_amount": 0, "discount_percentage": 0, "image": "item.svg", "tile_color": "#14B8A6", "tile_shape": "rounded", "branch_id": "665000000000000000000010", "status": "Active", "created_by": "admin", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000108", "id": "665000000000000000000108", "name": "Cedarwood Beard Oil 30ml", "item_name": "Cedarwood Beard Oil 30ml", "itemid": "MCS-008", "barcode_id": "8990001000086", "category_id": "665000000000000000000202", "category_name": "Hair Care Products", "supplier_id": "665000000000000000000401", "supplier_name": "Macisla Supply Co.", "selling_price": 155000, "mrp_price": 155000, "company_price": 68000, "available_quantity": 4, "low_stock": 5, "track_inventory": true, "negative_stock": false, "available_for_sale": true, "item_kind": "product", "unit": "bottle", "tax": 0, "tax_type": "Exclusive", "tax_name": "No Tax (0%)", "discount_amount": 0, "discount_percentage": 0, "image": "item.svg", "tile_color": "#059669", "tile_shape": "rounded", "branch_id": "665000000000000000000010", "status": "Active", "created_by": "admin", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000109", "id": "665000000000000000000109", "name": "Iced Americano", "item_name": "Iced Americano", "itemid": "MCS-009", "barcode_id": "8990001000093", "category_id": "665000000000000000000203", "category_name": "Beverages", "supplier_id": "665000000000000000000401", "supplier_name": "Macisla Supply Co.", "selling_price": 35000, "mrp_price": 35000, "company_price": 11000, "available_quantity": 50, "low_stock": 5, "track_inventory": true, "negative_stock": false, "available_for_sale": true, "item_kind": "product", "unit": "qty", "tax": 0, "tax_type": "Exclusive", "tax_name": "No Tax (0%)", "discount_amount": 0, "discount_percentage": 0, "image": "item.svg", "tile_color": "#D97706", "tile_shape": "rounded", "branch_id": "665000000000000000000010", "status": "Active", "created_by": "admin", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "665000000000000000000110", "id": "665000000000000000000110", "name": "Oat Milk Latte", "item_name": "Oat Milk Latte", "itemid": "MCS-010", "barcode_id": "8990001000109", "category_id": "665000000000000000000203", "category_name": "Beverages", "supplier_id": "665000000000000000000401", "supplier_name": "Macisla Supply Co.", "selling_price": 45000, "mrp_price": 45000, "company_price": 16000, "available_quantity": 40, "low_stock": 5, "track_inventory": true, "negative_stock": false, "available_for_sale": true, "item_kind": "product", "unit": "qty", "tax": 0, "tax_type": "Exclusive", "tax_name": "No Tax (0%)", "discount_amount": 0, "discount_percentage": 0, "image": "item.svg", "tile_color": "#B45309", "tile_shape": "rounded", "branch_id": "665000000000000000000010", "status": "Active", "created_by": "admin", "created_date": "2026-11-19T00:00:00.000Z", "updated_date": "2026-11-19T00:00:00.000Z" }
+    {
+      "_id": "665000000000000000000101",
+      "id": "665000000000000000000101",
+      "name": "The Essential (The AI Precision Cut)",
+      "item_name": "The Essential (The AI Precision Cut)",
+      "itemid": "MCS-001",
+      "barcode_id": "8990001000017",
+      "category_id": "665000000000000000000201",
+      "category_name": "Haircuts & Grooming",
+      "supplier_id": "665000000000000000000401",
+      "supplier_name": "Macisla Supply Co.",
+      "selling_price": 100000,
+      "mrp_price": 100000,
+      "company_price": 0,
+      "available_quantity": 99,
+      "low_stock": 5,
+      "track_inventory": false,
+      "negative_stock": true,
+      "available_for_sale": true,
+      "item_kind": "service",
+      "unit": "session",
+      "tax": 0,
+      "tax_type": "Exclusive",
+      "tax_name": "No Tax (0%)",
+      "discount_amount": 0,
+      "discount_percentage": 0,
+      "image": "item.svg",
+      "tile_color": "#2563EB",
+      "tile_shape": "rounded",
+      "branch_id": "665000000000000000000010",
+      "status": "Active",
+      "created_by": "admin",
+      "created_date": "2026-11-19T09:59:03.635Z",
+      "updated_date": "2026-11-19T09:59:03.635Z"
+    },
+    {
+      "_id": "665000000000000000000102",
+      "id": "665000000000000000000102",
+      "name": "The Signature (The Complete Atelier Cut)",
+      "item_name": "The Signature (The Complete Atelier Cut)",
+      "itemid": "MCS-002",
+      "barcode_id": "8990001000024",
+      "category_id": "665000000000000000000201",
+      "category_name": "Haircuts & Grooming",
+      "supplier_id": "665000000000000000000401",
+      "supplier_name": "Macisla Supply Co.",
+      "selling_price": 130000,
+      "mrp_price": 130000,
+      "company_price": 0,
+      "available_quantity": 99,
+      "low_stock": 5,
+      "track_inventory": false,
+      "negative_stock": true,
+      "available_for_sale": true,
+      "item_kind": "service",
+      "unit": "session",
+      "tax": 0,
+      "tax_type": "Exclusive",
+      "tax_name": "No Tax (0%)",
+      "discount_amount": 0,
+      "discount_percentage": 0,
+      "image": "item.svg",
+      "tile_color": "#0D9488",
+      "tile_shape": "rounded",
+      "branch_id": "665000000000000000000010",
+      "status": "Active",
+      "created_by": "admin",
+      "created_date": "2026-11-19T09:59:03.635Z",
+      "updated_date": "2026-11-19T09:59:03.635Z"
+    },
+    {
+      "_id": "665000000000000000000103",
+      "id": "665000000000000000000103",
+      "name": "The VIP Ritual (The Executive Protocol)",
+      "item_name": "The VIP Ritual (The Executive Protocol)",
+      "itemid": "MCS-003",
+      "barcode_id": "8990001000031",
+      "category_id": "665000000000000000000201",
+      "category_name": "Haircuts & Grooming",
+      "supplier_id": "665000000000000000000401",
+      "supplier_name": "Macisla Supply Co.",
+      "selling_price": 150000,
+      "mrp_price": 150000,
+      "company_price": 0,
+      "available_quantity": 99,
+      "low_stock": 5,
+      "track_inventory": false,
+      "negative_stock": true,
+      "available_for_sale": true,
+      "item_kind": "service",
+      "unit": "session",
+      "tax": 0,
+      "tax_type": "Exclusive",
+      "tax_name": "No Tax (0%)",
+      "discount_amount": 0,
+      "discount_percentage": 0,
+      "image": "item.svg",
+      "tile_color": "#7C3AED",
+      "tile_shape": "rounded",
+      "branch_id": "665000000000000000000010",
+      "status": "Active",
+      "created_by": "admin",
+      "created_date": "2026-11-19T09:59:03.635Z",
+      "updated_date": "2026-11-19T09:59:03.635Z"
+    }
   ],
   "meta": [
-    { "_id": "theme", "theme": "light", "theme_name": "default", "primary_color": "#506fe4", "updated_date": "2026-11-19T00:00:00.000Z" },
-    { "_id": "stock_preference", "preference": "track" }
+    {
+      "_id": "stock_preference",
+      "preference": "track"
+    },
+    {
+      "_id": "theme",
+      "theme": "light",
+      "theme_name": "default",
+      "primary_color": "#506fe4",
+      "updated_date": "2026-11-19T00:00:00.000Z"
+    }
   ]
 };
 

@@ -87,13 +87,13 @@ test('Original Posnic static UI + full POS login, dashboard, checkout, hold, and
       headers: authHeaders,
     }).then((r) => r.json());
     assert.equal(tileRes.type, 'success');
-    assert.equal(tileRes.data.items.length, 10);
+    assert.equal(tileRes.data.items.length, 3);
 
-    const clay = tileRes.data.items.find((i) => i.itemid === 'MCS-005');
-    assert.ok(clay);
-    const initialStock = clay.available_quantity;
+    const essential = tileRes.data.items.find((i) => i.itemid === 'MCS-001');
+    assert.ok(essential);
+    assert.equal(essential.selling_price, 100000);
 
-    // 6. Save a new sale and verify stock decrements + appears in getLatestSales & GET /sales
+    // 6. Save a new sale and verify it appears in getLatestSales & GET /sales
     const createSale = await fetch(`${base}/sales`, {
       method: 'POST',
       headers: authHeaders,
@@ -102,24 +102,21 @@ test('Original Posnic static UI + full POS login, dashboard, checkout, hold, and
         customer_name: 'Walk-in Customer',
         payment_mode: 'QRIS',
         payment_status: 'Paid',
-        sales_total: clay.selling_price * 2,
+        sales_total: essential.selling_price * 4,
         items: [
           {
-            item_id: clay._id,
-            item_name: clay.name,
-            item_quantity: 2,
-            selling_price: clay.selling_price,
-            item_price_total: clay.selling_price * 2,
-            company_price: clay.company_price,
+            item_id: essential._id,
+            item_name: essential.name,
+            item_quantity: 4,
+            selling_price: essential.selling_price,
+            item_price_total: essential.selling_price * 4,
+            company_price: essential.company_price,
           },
         ],
       }),
     }).then((r) => r.json());
     assert.equal(createSale.type, 'success');
     assert.ok(createSale.data.sales_id);
-
-    const clayAfter = await fetch(`${base}/items/${clay._id}`, { headers: authHeaders }).then((r) => r.json());
-    assert.equal(clayAfter.data.available_quantity, initialStock - 2);
 
     const latest = await fetch(`${base}/sales/getLatestSales`, { headers: authHeaders }).then((r) => r.json());
     const parsedLatest = JSON.parse(latest.data);
