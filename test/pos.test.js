@@ -44,6 +44,7 @@ test('Original Posnic static UI + full POS login, dashboard, checkout, hold, and
     }).then((r) => r.json());
     assert.equal(login.type, 'success');
     assert.equal(login.data.usertype, 'super_admin');
+    assert.equal(login.data.plan, 'premium');
     assert.ok(login.data.jwt_token);
 
     const authHeaders = {
@@ -138,6 +139,55 @@ test('Original Posnic static UI + full POS login, dashboard, checkout, hold, and
     const heldList = await fetch(`${base}/sales/getLatestSales?type=hold`, { headers: authHeaders }).then((r) => r.json());
     const parsedHeld = JSON.parse(heldList.data);
     assert.equal(parsedHeld.length, 1);
+
+    // 8. Unlocked premium reports return real aggregated D1/SQLite data
+    const salesRep = await fetch(`${base}/sales/salesReports?page=1&limit=10`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(salesRep.type, 'success');
+    assert.ok(salesRep.data.total >= 3);
+    assert.ok(salesRep.data.list[0].items_total > 0);
+
+    const summaryRep = await fetch(`${base}/sales/salesSummaryReports`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(summaryRep.type, 'success');
+    assert.ok(summaryRep.data.net_sales >= 800000);
+    assert.ok(summaryRep.data.gross_profit > 0);
+
+    const dailyRep = await fetch(`${base}/sales/dailySalesReports`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(dailyRep.type, 'success');
+    assert.ok(dailyRep.data.product_details.length >= 3);
+    assert.ok(dailyRep.data.payment_details.length >= 2);
+
+    const itemRep = await fetch(`${base}/sales/itemSalesReportTable?page=1&limit=10`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(itemRep.type, 'success');
+    assert.ok(itemRep.data.list[0].total_amount > 0);
+
+    const stockRep = await fetch(`${base}/items/itemStockReportTable?page=1&limit=10`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(stockRep.type, 'success');
+    assert.ok(stockRep.data.selling_total > 0);
+
+    const catRep = await fetch(`${base}/sales/categorySalesReportTable?page=1&limit=10`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(catRep.type, 'success');
+    assert.ok(catRep.data.total >= 2);
+
+    const custRep = await fetch(`${base}/sales/customerSalesReportTable?page=1&limit=10`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(custRep.type, 'success');
+    assert.ok(custRep.data.total >= 2);
+
+    const payTypeRep = await fetch(`${base}/sales/paymentSaleTypeReport`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(payTypeRep.type, 'success');
+    assert.ok(payTypeRep.data.payment.length >= 2);
+
+    const payTxRep = await fetch(`${base}/sales/paymentSalesTranscationReportTable?page=1&limit=10`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(payTxRep.type, 'success');
+    assert.ok(payTxRep.data.list[0].updated_date.$date.$numberLong);
+
+    const userRep = await fetch(`${base}/sales/userReportTable?page=1&limit=10`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(userRep.type, 'success');
+    assert.ok(userRep.data.summary.sales >= 3);
+
+    const regRep = await fetch(`${base}/registers/registerReportTable?page=1&limit=10`, { headers: authHeaders }).then((r) => r.json());
+    assert.equal(regRep.type, 'success');
+    assert.ok(Array.isArray(regRep.data.data));
+    assert.ok(regRep.data.list[0].register_amount > 500000);
   } finally {
     server.closeAllConnections?.();
     await new Promise((resolve) => server.close(resolve));

@@ -835,6 +835,38 @@ function normalizeItemsPayload(rawItems) {
   return Array.isArray(rawItems) ? rawItems : [];
 }
 
+function paginateReport(rows, query = {}) {
+  const total = rows.length;
+  const per_page = Math.max(1, Math.min(500, parseInt(query.limit || '10', 10) || 10));
+  const total_pages = Math.max(1, Math.ceil(total / per_page));
+  const current_page = Math.min(total_pages, Math.max(1, parseInt(query.page || '1', 10) || 1));
+  const start = (current_page - 1) * per_page;
+  return {
+    list: rows.slice(start, start + per_page),
+    total,
+    total_pages,
+    current_page,
+    per_page,
+  };
+}
+
+function inReportDateRange(isoDate, query = {}) {
+  const s = String(query.starting_date || '').trim();
+  const e = String(query.ending_date || '').trim();
+  if (!s && !e) return true;
+  const dt = new Date(isoDate || Date.now());
+  if (Number.isNaN(dt.getTime())) return true;
+  if (s) {
+    const sd = new Date(s);
+    if (!Number.isNaN(sd.getTime()) && dt < sd) return false;
+  }
+  if (e) {
+    const ed = new Date(e);
+    if (!Number.isNaN(ed.getTime()) && dt > ed) return false;
+  }
+  return true;
+}
+
 function inFilterPeriod(isoDate, filter) {
   if (!filter || filter === 'all') return true;
   const dt = new Date(isoDate || Date.now());
@@ -1013,7 +1045,7 @@ export async function handlePosnicRequest(request, store, env = {}) {
               printing_size: branch.print_size || '80mm',
             },
           ],
-          plan: 'free',
+          plan: 'premium',
           userACLPlan: true,
           outstanding_customers: [],
           jwt_token: token,
@@ -1189,7 +1221,32 @@ export async function handlePosnicRequest(request, store, env = {}) {
       return ok({ register_status: 'Closed' }, 'Register closed');
     }
     if (sub === 'registerReportTable') {
-      return ok({ list: regs, total: regs.length });
+      const salesAll = (await store.list('sales')).filter((s) => s.sale_process !== 'Hold');
+      const byMode = new Map();
+      let grand = 0;
+      for (const s of salesAll) {
+        const amt = num(s.sales_total ?? s.total_amount);
+        grand += amt;
+        const m = s.payment_mode || 'Cash';
+        byMode.set(m, (byMode.get(m) || 0) + amt);
+      }
+      const rows = regs.map((r) => ({
+        ...r,
+        id: r._id,
+        open_date: r.opened_at || r.created_date,
+        close_date: r.closed_at || null,
+        opening_float: num(r.opening_balance, 500000),
+        register_amount: num(r.opening_balance, 500000) + grand,
+        countedAmount: [],
+      }));
+      return ok({
+        ...paginateReport(rows, query),
+        data: Array.from(byMode.entries()).map(([payment_mode, sale_total]) => ({ payment_mode, sale_total })),
+      });
+    }
+    if (sub === 'registerSaleDetails' || sub === 'getRegisterReportDetails') {
+      const salesAll = (await store.list('sales')).filter((s) => s.sale_process !== 'Hold');
+      return ok({ ...paginateReport(salesAll, query), sales: salesAll });
     }
   }
 
@@ -1366,6 +1423,44 @@ export async function handlePosnicRequest(request, store, env = {}) {
     if (sub === 'itemLowStockTable') {
       const low = items.filter((it) => it.track_inventory && num(it.available_quantity) <= num(it.low_stock, 5));
       return ok({ list: low, total: low.length, low_stock_count: low.length });
+    }
+
+    if (sub === 'itemStockReportTable') {
+      let company_total = 0;
+      let selling_total = 0;
+      const rows = items.map((it) => {
+        const qty = num(it.available_quantity, 0);
+        const cp = num(it.company_price, 0);
+        const sp = num(it.selling_price, 0);
+        const cTot = cp * qty;
+        const sTot = sp * qty;
+        company_total += cTot;
+        selling_total += sTot;
+        return {
+          _id: it._id,
+          name: it.name,
+          itemid: it.itemid || '',
+          available_quantity: qty,
+          company_price: cp,
+          company_total: cTot,
+          selling_price: sp,
+          selling_total: sTot,
+        };
+      });
+      return ok({ ...paginateReport(rows, query), company_total, selling_total });
+    }
+
+    if (sub === 'categoryItemsReportTable' || sub === 'supplierItemsReportTable') {
+      const rows = items.map((it) => ({
+        _id: it._id,
+        name: it.name,
+        category_name: it.category_name || 'General',
+        supplier_name: it.supplier_name || 'Macisla Supply Co.',
+        available_quantity: num(it.available_quantity),
+        selling_price: num(it.selling_price),
+        company_price: num(it.company_price),
+      }));
+      return ok(paginateReport(rows, query));
     }
 
     if (sub === 'quantityCount') {
@@ -1636,9 +1731,344 @@ export async function handlePosnicRequest(request, store, env = {}) {
     }
 
     if (
-      ['salesReports', 'dailySalesReports', 'salesSummaryReports', 'customerSalesReportTable', 'itemSalesReportTable', 'categorySalesReportTable', 'paymentSalesTranscationReportTable'].includes(sub)
+      [
+        'salesReports',
+        'instantSalesReports',
+        'dailySalesReports',
+        'salesSummaryReports',
+        'customerSalesReportTable',
+        'itemSalesReportTable',
+        'itemExpiryReportTable',
+        'categorySalesReportTable',
+        'paymentSaleTypeReport',
+        'paymentSalesTranscationReportTable',
+        'taxSalesReports',
+        'userReportTable',
+        'returnSalesReportTable',
+        'pendingSalesReportTable',
+        'supplierSalesReportTable',
+      ].includes(sub)
     ) {
-      return ok({ list: sales, total: sales.length });
+      const completedSales = sales.filter(
+        (s) =>
+          s.sale_process !== 'Hold' &&
+          !/cancel/i.test(String(s.sale_process || '')) &&
+          inReportDateRange(s.created_date || s.date, query)
+      );
+
+      if (sub === 'salesReports' || sub === 'instantSalesReports') {
+        const tender = String(query.tender || '').trim().toLowerCase();
+        const filtered = tender
+          ? completedSales.filter((s) => String(s.payment_mode || '').toLowerCase() === tender)
+          : completedSales;
+        const formatted = filtered.map((s) => {
+          const lineItems = normalizeItemsPayload(s.items).map((li) => ({
+            ...li,
+            item_sku: li.item_sku || li.itemid || li.barcode_id || '',
+            item_price: num(li.item_price ?? li.selling_price),
+            item_quantity: num(li.item_quantity ?? li.quantity, 1),
+            item_discount: num(li.item_discount),
+            item_discount_percentage: num(li.item_discount_percentage),
+            tax: num(li.tax),
+            tax_type: String(li.tax_type || 'exclusive').toLowerCase(),
+            total_amount: num(li.item_price_total ?? li.total_amount) || num(li.item_price ?? li.selling_price) * num(li.item_quantity, 1),
+          }));
+          return {
+            ...s,
+            string_date: s.string_date || s.date || s.created_date,
+            items: lineItems,
+            number_of_items: lineItems.length,
+            items_total: num(s.sales_total ?? s.total_amount),
+            extra_discount: num(s.extra_discount),
+          };
+        });
+        return ok(paginateReport(formatted, query));
+      }
+
+      if (sub === 'salesSummaryReports') {
+        let discounts = 0;
+        let cogs = 0;
+        let refunds = 0;
+        let net_sales = 0;
+        let net_sales_tax = 0;
+        for (const s of completedSales) {
+          const amt = num(s.sales_total ?? s.total_amount);
+          const tax = num(s.tax);
+          discounts += num(s.discount) + num(s.extra_discount);
+          cogs += num(s.sales_total_company_price);
+          if (/return/i.test(String(s.sale_process || ''))) {
+            refunds += amt;
+          } else {
+            net_sales += amt;
+            net_sales_tax += tax;
+          }
+        }
+        return ok({
+          discounts,
+          gross_profit: net_sales - cogs,
+          refunds,
+          cogs,
+          sales_exclude_tax: Math.max(0, net_sales - net_sales_tax),
+          sales_include_tax: net_sales,
+          net_sales,
+          net_sales_tax,
+          order_type_summary: [],
+        });
+      }
+
+      if (sub === 'dailySalesReports') {
+        const allItems = await store.list('items');
+        const stockById = new Map(allItems.map((it) => [String(it._id), it]));
+        const prodMap = new Map();
+        const payMap = new Map();
+        let totalExtraDiscount = 0;
+
+        for (const s of completedSales) {
+          totalExtraDiscount += num(s.extra_discount);
+          const pm = s.payment_mode || 'Cash';
+          payMap.set(pm, (payMap.get(pm) || 0) + num(s.sales_total ?? s.total_amount));
+
+          for (const li of normalizeItemsPayload(s.items)) {
+            const key = String(li.item_id || li.item_name || 'item');
+            const qty = num(li.item_quantity ?? li.quantity, 1);
+            const subTot = num(li.item_price ?? li.selling_price) * qty;
+            const tot = num(li.item_price_total ?? li.total_amount) || subTot;
+            const cost = num(li.company_price_total) || num(li.company_price) * qty;
+            const disc = num(li.item_discount) * qty;
+            const tax = (subTot * num(li.tax)) / 100;
+            const itemDoc = stockById.get(String(li.item_id));
+            const prev = prodMap.get(key) || {
+              product_name: li.item_name || li.name || 'Item',
+              product_sku: itemDoc?.itemid || li.itemid || li.barcode_id || '',
+              product_qty: 0,
+              product_subtotal: 0,
+              product_discount: 0,
+              product_tax: 0,
+              product_total: 0,
+              product_profit: 0,
+              closing_stock: itemDoc?.track_inventory ? num(itemDoc.available_quantity) : null,
+            };
+            prev.product_qty += qty;
+            prev.product_subtotal += subTot;
+            prev.product_discount += disc;
+            prev.product_tax += tax;
+            prev.product_total += tot;
+            prev.product_profit += tot - cost;
+            prodMap.set(key, prev);
+          }
+        }
+
+        return ok({
+          branch_details: {
+            date: nowIso(),
+            from_date: query.starting_date || nowIso().slice(0, 10),
+            to_date: query.ending_date || nowIso().slice(0, 10),
+            branch_name: branch.branch_name,
+            branch_address: branch.store_address || '',
+            branch_phone: branch.branch_phone || '',
+            branch_email: branch.branch_email || '',
+            period_label: 'Full day',
+            serving_periods: [],
+          },
+          product_details: Array.from(prodMap.values()),
+          payment_details: Array.from(payMap.entries()).map(([payment_mode, sale_payment]) => ({
+            payment_mode,
+            sale_payment,
+          })),
+          extra_discount: { total_sale_extra_discount: totalExtraDiscount, by_type: [] },
+          spoilage_details: [],
+        });
+      }
+
+      if (sub === 'itemSalesReportTable') {
+        const map = new Map();
+        for (const s of completedSales) {
+          for (const li of normalizeItemsPayload(s.items)) {
+            const key = String(li.item_id || li.item_name || 'item');
+            const qty = num(li.item_quantity ?? li.quantity, 1);
+            const tot = num(li.item_price_total ?? li.total_amount) || num(li.item_price ?? li.selling_price) * qty;
+            const cost = num(li.company_price_total) || num(li.company_price) * qty;
+            const prev = map.get(key) || {
+              name: li.item_name || li.name || 'Item',
+              item_quantity: 0,
+              sales_count: 0,
+              sales_profit: 0,
+              total_amount: 0,
+            };
+            prev.item_quantity += qty;
+            prev.sales_count += 1;
+            prev.total_amount += tot;
+            prev.sales_profit += tot - cost;
+            map.set(key, prev);
+          }
+        }
+        const rows = Array.from(map.values()).map((r) => ({
+          ...r,
+          sales_avg: r.sales_count > 0 ? r.total_amount / r.sales_count : 0,
+        }));
+        return ok(paginateReport(rows, query));
+      }
+
+      if (sub === 'categorySalesReportTable') {
+        const map = new Map();
+        for (const s of completedSales) {
+          for (const li of normalizeItemsPayload(s.items)) {
+            const cat = li.category_name || 'General';
+            const qty = num(li.item_quantity ?? li.quantity, 1);
+            const tot = num(li.item_price_total ?? li.total_amount) || num(li.item_price ?? li.selling_price) * qty;
+            const cost = num(li.company_price_total) || num(li.company_price) * qty;
+            const prev = map.get(cat) || {
+              name: cat,
+              item_quantity: 0,
+              sales_count: 0,
+              sales_profit: 0,
+              total_amount: 0,
+            };
+            prev.item_quantity += qty;
+            prev.sales_count += 1;
+            prev.total_amount += tot;
+            prev.sales_profit += tot - cost;
+            map.set(cat, prev);
+          }
+        }
+        const rows = Array.from(map.values()).map((r) => ({
+          ...r,
+          sales_avg: r.sales_count > 0 ? r.total_amount / r.sales_count : 0,
+        }));
+        return ok(paginateReport(rows, query));
+      }
+
+      if (sub === 'customerSalesReportTable') {
+        const map = new Map();
+        for (const s of completedSales) {
+          const cid = String(s.customer_id || s.customer_name || 'walkin');
+          const amt = num(s.sales_total ?? s.total_amount);
+          const isRet = /return/i.test(String(s.sale_process || ''));
+          const prev = map.get(cid) || {
+            customer_id: cid,
+            customer_name: s.customer_name || 'Walk-in Customer',
+            customer_phone: s.customer_phone || '0000000000',
+            sales_count: 0,
+            refund_payment: 0,
+            sales_payment: 0,
+          };
+          prev.sales_count += 1;
+          if (isRet) prev.refund_payment += amt;
+          else prev.sales_payment += amt;
+          map.set(cid, prev);
+        }
+        return ok(paginateReport(Array.from(map.values()), query));
+      }
+
+      if (sub === 'paymentSaleTypeReport') {
+        const map = new Map();
+        for (const s of completedSales) {
+          const pm = s.payment_mode || 'Cash';
+          const amt = num(s.sales_total ?? s.total_amount);
+          const isRet = /return/i.test(String(s.sale_process || ''));
+          const prev = map.get(pm) || {
+            sales_payment_mode: pm,
+            sales_payment: 0,
+            partial_amount: 0,
+            outstanding_amount: 0,
+            refund_payment: 0,
+            sales_count: 0,
+          };
+          prev.sales_count += 1;
+          if (isRet) prev.refund_payment += amt;
+          else prev.sales_payment += amt;
+          map.set(pm, prev);
+        }
+        return ok({ payment: Array.from(map.values()), currencyDigits: 2 });
+      }
+
+      if (sub === 'paymentSalesTranscationReportTable') {
+        const modeFilter = String(query.payment_mode || 'All').toLowerCase();
+        const filtered =
+          modeFilter && modeFilter !== 'all'
+            ? completedSales.filter((s) => String(s.payment_mode || '').toLowerCase() === modeFilter)
+            : completedSales;
+        const rows = filtered.map((s) => {
+          const ts = new Date(s.updated_date || s.created_date || Date.now()).getTime();
+          return {
+            _id: s._id,
+            sales_id: s.sales_id,
+            updated_date: { $date: { $numberLong: String(Number.isFinite(ts) ? ts : Date.now()) } },
+            user_name: s.sold_by || s.user_name || 'admin',
+            customer_name: s.customer_name || 'Walk-in Customer',
+            payment_mode: s.payment_mode || 'Cash',
+            items_total: num(s.sales_total ?? s.total_amount),
+            report_amount: num(s.sales_total ?? s.total_amount),
+            currencyDigits: 2,
+          };
+        });
+        return ok(paginateReport(rows, query));
+      }
+
+      if (sub === 'taxSalesReports') {
+        const tax_details = completedSales.map((s) => ({
+          _id: {
+            items: normalizeItemsPayload(s.items).map((li) => ({
+              ...li,
+              item_price: num(li.item_price ?? li.selling_price),
+              item_quantity: num(li.item_quantity ?? li.quantity, 1),
+              tax: num(li.tax),
+              tax_type: String(li.tax_type || 'exclusive').toLowerCase(),
+              tax_name: li.tax_name || `Tax ${num(li.tax)}%`,
+              tax_fields: null,
+            })),
+          },
+        }));
+        return ok({ tax_details });
+      }
+
+      if (sub === 'userReportTable') {
+        const map = new Map();
+        let totalSalesCount = 0;
+        let totalAmount = 0;
+        for (const s of completedSales) {
+          const uname = s.sold_by || s.user_name || 'admin';
+          const amt = num(s.sales_total ?? s.total_amount);
+          const cost = num(s.sales_total_company_price);
+          const isRet = /return/i.test(String(s.sale_process || ''));
+          totalSalesCount += 1;
+          totalAmount += amt;
+          const prev = map.get(uname) || {
+            user_name: uname,
+            sales_count: 0,
+            refund_payment: 0,
+            sales_profit: 0,
+            sales_payment: 0,
+          };
+          prev.sales_count += 1;
+          if (isRet) prev.refund_payment += amt;
+          else {
+            prev.sales_payment += amt;
+            prev.sales_profit += amt - cost;
+          }
+          map.set(uname, prev);
+        }
+        const rows = Array.from(map.values()).map((r) => ({
+          ...r,
+          sales_avg: r.sales_count > 0 ? r.sales_payment / r.sales_count : 0,
+        }));
+        return ok({
+          ...paginateReport(rows, query),
+          summary: { sales: totalSalesCount, amount: totalAmount },
+        });
+      }
+
+      if (sub === 'returnSalesReportTable') {
+        const returns = completedSales.filter((s) => /return/i.test(String(s.sale_process || '')));
+        return ok(paginateReport(returns, query));
+      }
+
+      if (sub === 'pendingSalesReportTable') {
+        const pending = completedSales.filter((s) => /unpaid|partial/i.test(String(s.payment_status || '')));
+        return ok(paginateReport(pending, query));
+      }
+
+      return ok(paginateReport([], query));
     }
   }
 
@@ -1723,7 +2153,43 @@ export async function handlePosnicRequest(request, store, env = {}) {
     return ok(branch);
   }
 
-  // ── 13. Shifts, Roster, Table/KOT, Stocklogs, Generic Collection CRUD ────────
+  // ── 13. Expense & Receiving Reports, Shifts, Roster, Generic CRUD ────────────
+  if (root === 'expenses' && sub === 'expensesReportTable') {
+    const expenses = (await store.list('expenses')).filter((e) => inReportDateRange(e.created_date || e.date, query));
+    const rows = expenses.map((e) => ({
+      ...e,
+      amount: num(e.amount ?? e.expense_amount),
+      type: e.type || e.expense_type || 'General',
+      category: e.category || e.expense_category || 'Operations',
+      recipientname: e.recipientname || e.recipient || '-',
+      approvedby: e.approvedby || e.approved_by || currentUser?.user_name || 'admin',
+      description: e.description || e.note || '',
+    }));
+    return ok(paginateReport(rows, query));
+  }
+  if (root === 'receivings' && ['receivingReportTable', 'returnReceivingReportTable', 'supplierReceivingReportTable'].includes(sub)) {
+    const recs = (await store.list('receivings')).filter((r) => inReportDateRange(r.created_date || r.date, query));
+    let purchased = 0;
+    let paid = 0;
+    const rows = recs.map((r) => {
+      const tot = num(r.receiving_total ?? r.total_amount);
+      purchased += tot;
+      paid += /unpaid/i.test(String(r.payment_status || '')) ? 0 : tot;
+      return {
+        ...r,
+        receiving_id: r.receiving_id || `P-${String(r._id).slice(-4)}`,
+        string_date: r.string_date || r.date || r.created_date,
+        supplier_name: r.supplier_name || 'Macisla Supply Co.',
+        supplier_phone: r.supplier_phone || '',
+        items: normalizeItemsPayload(r.items),
+        items_total: tot,
+      };
+    });
+    return ok({
+      ...paginateReport(rows, query),
+      summary: { count: rows.length, purchased, paid, outstanding: Math.max(0, purchased - paid), unknown: 0 },
+    });
+  }
   if (root === 'shifts') {
     return ok({ rows: [], active_shift: null });
   }

@@ -793,6 +793,11 @@
             let API_URL = window.location.protocol.startsWith('http')
                 ? window.location.origin + '/'
                 : 'http://localhost:5555/';
+            try {
+                if (localStorage.getItem('userplan') === 'free' || !localStorage.getItem('userplan')) {
+                    localStorage.setItem('userplan', 'premium');
+                }
+            } catch (e) {}
         </script>
 
         <meta charset="utf-8"/>
