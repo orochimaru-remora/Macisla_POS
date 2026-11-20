@@ -135,15 +135,19 @@ export async function onRequest(context) {
     return cleanRes;
   }
 
+  const isApiOrMedia =
+    p === '/r2' || p.startsWith('/r2/') || p === '/api' || p.startsWith('/api/');
+
   if (
-    p === '/' ||
-    p === '/index.html' ||
-    p.startsWith('/script/') ||
-    p.startsWith('/style/') ||
-    p.startsWith('/static/') ||
-    p.startsWith('/fonts/') ||
-    p.startsWith('/languages/') ||
-    STATIC_EXT.test(p)
+    !isApiOrMedia &&
+    (p === '/' ||
+      p === '/index.html' ||
+      p.startsWith('/script/') ||
+      p.startsWith('/style/') ||
+      p.startsWith('/static/') ||
+      p.startsWith('/fonts/') ||
+      p.startsWith('/languages/') ||
+      STATIC_EXT.test(p))
   ) {
     return next();
   }
