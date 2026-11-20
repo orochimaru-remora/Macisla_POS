@@ -24,6 +24,9 @@ function createD1Store(db, r2) {
     await db
       .prepare('CREATE INDEX IF NOT EXISTS idx_pos_docs_collection ON pos_docs (collection, updated_at DESC)')
       .run();
+    await db
+      .prepare('CREATE INDEX IF NOT EXISTS idx_pos_docs_collection_created ON pos_docs (collection, created_at DESC)')
+      .run();
     schemaReady = true;
   }
 
@@ -34,6 +37,26 @@ function createD1Store(db, r2) {
         .prepare('SELECT data FROM pos_docs WHERE collection = ? ORDER BY updated_at DESC')
         .bind(collection)
         .all();
+      return (results || []).map((r) => JSON.parse(r.data));
+    },
+    async listRange(collection, { sinceIso = null, untilIso = null, limit = null } = {}) {
+      await ensureTable();
+      const clauses = ['collection = ?'];
+      const params = [collection];
+      if (sinceIso) {
+        clauses.push('created_at >= ?');
+        params.push(sinceIso);
+      }
+      if (untilIso) {
+        clauses.push('created_at <= ?');
+        params.push(untilIso);
+      }
+      let sql = `SELECT data FROM pos_docs WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC`;
+      if (limit != null && Number.isFinite(Number(limit)) && Number(limit) > 0) {
+        sql += ' LIMIT ?';
+        params.push(Math.floor(Number(limit)));
+      }
+      const { results } = await db.prepare(sql).bind(...params).all();
       return (results || []).map((r) => JSON.parse(r.data));
     },
     async get(collection, id) {
@@ -47,13 +70,14 @@ function createD1Store(db, r2) {
     async put(collection, id, doc) {
       await ensureTable();
       const now = new Date().toISOString();
+      const createdAt = doc?.created_date || now;
       await db
         .prepare(
           `INSERT INTO pos_docs (collection, id, data, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?)
            ON CONFLICT(collection, id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`
         )
-        .bind(collection, String(id), JSON.stringify(doc), now, now)
+        .bind(collection, String(id), JSON.stringify(doc), createdAt, now)
         .run();
       return doc;
     },

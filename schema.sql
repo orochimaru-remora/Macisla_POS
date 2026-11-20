@@ -13,3 +13,6 @@ CREATE TABLE IF NOT EXISTS pos_docs (
 
 CREATE INDEX IF NOT EXISTS idx_pos_docs_collection
   ON pos_docs (collection, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_pos_docs_collection_created
+  ON pos_docs (collection, created_at DESC);

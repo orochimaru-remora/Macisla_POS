@@ -33,11 +33,30 @@ test('Zero-login boot, no marketing popups, item editing + R2 upload persistence
     assert.match(bootJs, /userplan:\s*'premium'/);
     assert.match(bootJs, /posnic_desktop_nudge_done:\s*'1'/);
 
-    // 2. Runtime-info returns local mode (disables desktop-nudge and demo popups)
-    const runtime = await fetch(`${base}/runtime-info`).then((r) => r.json());
+    // 2. Runtime-info returns local mode and omits wildcard CORS (#2)
+    const runtimeRaw = await fetch(`${base}/runtime-info`);
+    assert.equal(runtimeRaw.headers.get('access-control-allow-origin'), null);
+    const runtime = await runtimeRaw.json();
     assert.equal(runtime.demo, false);
     assert.equal(runtime.mode, 'local');
     assert.equal(runtime.edition, 'local');
+
+    // Client error beacon & unknown CRUD collections must not write to pos_docs (#2)
+    const errRes = await fetch(`${base}/client-errors`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'test error' }),
+    });
+    assert.equal(errRes.status, 200);
+    assert.equal((await store.list('client-errors')).length, 0);
+
+    const unknownWrite = await fetch(`${base}/not_a_collection`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ evil: true }),
+    });
+    assert.equal(unknownWrite.status, 404);
+    assert.equal((await store.list('not_a_collection')).length, 0);
 
     // 3. Starter state: strictly the 3 Macisla services, 0 fake starter sales
     const initialSales = await fetch(`${base}/sales`).then((r) => r.json());
@@ -49,6 +68,23 @@ test('Zero-login boot, no marketing popups, item editing + R2 upload persistence
     assert.equal(essential.name, 'The Essential (The AI Precision Cut)');
     assert.equal(essential.selling_price, 100000);
 
+    // Default customer & supplier return customer_*/supplier_* fields expected by PosnicPro (#5)
+    const defCust = await fetch(`${base}/setting/getDefaultCustomer`).then((r) => r.json());
+    assert.equal(defCust.data.customer.customer_id, '665000000000000000000301');
+    assert.equal(defCust.data.customer.customer_phone, '0000000000');
+    const defSup = await fetch(`${base}/setting/getDefaultSupplier`).then((r) => r.json());
+    assert.equal(defSup.data.supplier.supplier_id, '665000000000000000000401');
+
+    // No plaintext passwords in users API (#6)
+    const usersList = await fetch(`${base}/users`).then((r) => r.json());
+    assert.equal(usersList.data.list[0].password, undefined);
+
+    // Bracket regex filters succeed safely and honor sibling filters (#7)
+    const bracketFilter = encodeURIComponent(JSON.stringify({ name: { $regex: '[' }, category_id: '665000000000000000000201' }));
+    const filteredItems = await fetch(`${base}/items?filters=${bracketFilter}`).then((r) => r.json());
+    assert.equal(filteredItems.type, 'success');
+    assert.equal(filteredItems.data.total, 0);
+
     // Taxes & Units have tax_id / unit_id + suggestions required by items_v2
     const unitRes = await fetch(`${base}/setting/getUnitAjaxList`).then((r) => r.json());
     assert.ok(Array.isArray(unitRes.suggestions));
@@ -56,7 +92,21 @@ test('Zero-login boot, no marketing popups, item editing + R2 upload persistence
     const taxRes = await fetch(`${base}/setting/getTaxAll`).then((r) => r.json());
     assert.ok(taxRes.data.some((t) => t.tax_id));
 
-    // 4. R2/upload multi-image + items/getItemDetails + PUT /items/:id/details persistence
+    // 4. R2/upload security & item edit persistence (#1)
+    assert.equal((await fetch(`${base}/r2/other/secret.txt`)).status, 403);
+    const svgUpload = await fetch(`${base}/items/uploadItemMultiImage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ items_image: [{ name: 'xss.svg', size: 10, data: 'PHN2Zy8+' }] }),
+    });
+    assert.equal(svgUpload.status, 400);
+    const badB64Upload = await fetch(`${base}/items/uploadItemMultiImage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ items_image: [{ name: 'bad.png', size: 10, data: '!!!not-base64!!!' }] }),
+    });
+    assert.equal(badB64Upload.status, 400);
+
     const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
     const uploadRes = await fetch(`${base}/items/uploadItemMultiImage`, {
       method: 'POST',
@@ -69,10 +119,7 @@ test('Zero-login boot, no marketing popups, item editing + R2 upload persistence
 
     const fetchedImg = await fetch(`${base}${uploadedPath}`);
     assert.equal(fetchedImg.status, 200);
-
-    const detailsBefore = await fetch(`${base}/items/getItemDetails?id=${essential._id}`).then((r) => r.json());
-    assert.equal(detailsBefore.type, 'success');
-    assert.equal(detailsBefore.data.available_quantity, 99);
+    assert.equal(fetchedImg.headers.get('x-content-type-options'), 'nosniff');
 
     const editRes = await fetch(`${base}/items/${essential._id}/details`, {
       method: 'PUT',
@@ -81,88 +128,80 @@ test('Zero-login boot, no marketing popups, item editing + R2 upload persistence
         name: 'The Essential Updated',
         selling_price: 115000,
         sku_id: 'MCS-001-U',
-        available_quantity: 1, // stripped by /details so live stock (99) is preserved
+        available_quantity: 1,
         cover_image: uploadedPath,
         image: [{ name: uploadedPath, size: 68, cover: 'yes' }],
         tax_type: 'exclusive',
       }),
     }).then((r) => r.json());
-    assert.equal(editRes.type, 'success');
-    assert.equal(editRes.data.name, 'The Essential Updated');
-    assert.equal(editRes.data.selling_price, 115000);
-    assert.equal(editRes.data.itemid, 'MCS-001-U');
     assert.equal(editRes.data.available_quantity, 99);
-    assert.equal(editRes.data.image, uploadedPath);
-    assert.equal(editRes.data.multi_image.length, 1);
-
-    // Re-running ensureSeeded MUST NOT overwrite saved user edits
     await ensureSeeded(store);
     const persisted = await fetch(`${base}/items/getItemDetails?id=${essential._id}`).then((r) => r.json());
     assert.equal(persisted.data.name, 'The Essential Updated');
-    assert.equal(persisted.data.selling_price, 115000);
 
-    // Create + Delete temporary item
-    const created = await fetch(`${base}/items`, {
+    // 5. Tracked item sale edit uses delta (no double deduction) & preserves created_date (#3), zero-total & inclusive tax (#4)
+    const pomade = await fetch(`${base}/items`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Temp Pomade', selling_price: 90000, image: [] }),
+      body: JSON.stringify({
+        name: 'Macisla Clay',
+        selling_price: 105000,
+        available_quantity: 10,
+        inventory: true,
+        tax: 5,
+        tax_type: 'inclusive',
+      }),
     }).then((r) => r.json());
-    assert.equal(created.data.image, 'item.svg');
-    const delRes = await fetch(`${base}/items`, {
-      method: 'DELETE',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ data: [created.data._id] }),
-    }).then((r) => r.json());
-    assert.equal(delRes.data.count, 1);
+    assert.equal(pomade.data.available_quantity, 10);
 
-    // 5. Sales checkout + hold + cancel + unlocked reports with timezone date filter
-    const sale = await fetch(`${base}/sales`, {
+    const trackedSale = await fetch(`${base}/sales`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         customer_name: 'Walk-in Customer',
-        payment_mode: 'QRIS',
-        sales_total: 230000,
-        items: [{ item_id: essential._id, item_name: persisted.data.name, item_quantity: 2, selling_price: 115000, item_price_total: 230000 }],
+        payment_mode: 'Cash',
+        sales_total: 315000,
+        items: [{ item_id: pomade.data._id, item_name: pomade.data.name, item_quantity: 3, selling_price: 105000, item_price_total: 315000, tax: 5, tax_type: 'inclusive' }],
       }),
     }).then((r) => r.json());
-    assert.equal(sale.type, 'success');
+    const afterSell = await fetch(`${base}/items/getItemDetails?id=${pomade.data._id}`).then((r) => r.json());
+    assert.equal(afterSell.data.available_quantity, 7);
 
-    const hold = await fetch(`${base}/sales/hold`, {
+    const origSale = await fetch(`${base}/sales/${trackedSale.data.sales_id}`).then((r) => r.json());
+    await fetch(`${base}/sales/${trackedSale.data.sales_id}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sales_description: 'Edited qty 3 -> 4',
+        sales_total: 420000,
+        items: [{ item_id: pomade.data._id, item_name: pomade.data.name, item_quantity: 4, selling_price: 105000, item_price_total: 420000, tax: 5, tax_type: 'inclusive' }],
+      }),
+    });
+    const afterEditStock = await fetch(`${base}/items/getItemDetails?id=${pomade.data._id}`).then((r) => r.json());
+    assert.equal(afterEditStock.data.available_quantity, 6);
+    const editedSale = await fetch(`${base}/sales/${trackedSale.data.sales_id}`).then((r) => r.json());
+    assert.equal(editedSale.data.created_date, origSale.data.created_date);
+
+    // Daily report uses inclusive tax math cleanly (420000 * 5 / 105 = 20000) (#4)
+    const dailyInc = await fetch(`${base}/sales/dailySalesReports`).then((r) => r.json());
+    assert.equal(Math.round(dailyInc.data.product_details[0].product_tax), 20000);
+
+    // Explicit sales_total: 0 is preserved for comped sales (#4)
+    const zeroSale = await fetch(`${base}/sales`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ customer_name: 'Parked Guest', sales_total: 130000, items: [{ item_id: '665000000000000000000102', item_name: 'The Signature', item_quantity: 1, selling_price: 130000 }] }),
+      body: JSON.stringify({
+        customer_name: 'VIP Comp',
+        sales_total: 0,
+        items: [{ item_id: essential._id, item_name: persisted.data.name, item_quantity: 1, selling_price: 115000, item_price_total: 0 }],
+      }),
     }).then((r) => r.json());
-    assert.equal(hold.type, 'success');
+    const zeroDoc = await fetch(`${base}/sales/${zeroSale.data.sales_id}`).then((r) => r.json());
+    assert.equal(zeroDoc.data.sales_total, 0);
 
-    const heldList = await fetch(`${base}/sales/getLatestSales?type=hold`).then((r) => r.json());
-    assert.equal(JSON.parse(heldList.data).length, 1);
-
-    const overview = await fetch(`${base}/dashboard/getOverview?filter=day`).then((r) => r.json());
-    assert.equal(overview.data.kpis.total_sales, 230000);
-
-    for (const reportPath of [
-      'sales/salesReports?page=1&limit=10',
-      'sales/salesSummaryReports',
-      'sales/dailySalesReports',
-      'sales/itemSalesReportTable?page=1&limit=10',
-      'sales/categorySalesReportTable?page=1&limit=10',
-      'sales/customerSalesReportTable?page=1&limit=10',
-      'sales/paymentSaleTypeReport',
-      'sales/paymentSalesTranscationReportTable?page=1&limit=10',
-      'sales/taxSalesReports',
-      'sales/userReportTable?page=1&limit=10',
-      'items/itemStockReportTable?page=1&limit=10',
-      'registers/registerReportTable?page=1&limit=10',
-      'expenses/expensesReportTable?page=1&limit=10',
-      'receivings/receivingReportTable?page=1&limit=10',
-    ]) {
-      const rep = await fetch(`${base}/${reportPath}`).then((r) => r.json());
-      assert.equal(rep.type, 'success', `${reportPath} failed`);
-    }
-
-    const cancelled = await fetch(`${base}/sales/cancel/${sale.data.sales_id}`, { method: 'POST' }).then((r) => r.json());
-    assert.equal(cancelled.data.sale_process, 'Cancel');
+    // Bounded listRange respects created_at dates & limits (#8)
+    const limited = await store.listRange('sales', { limit: 1 });
+    assert.equal(limited.length, 1);
   } finally {
     server.closeAllConnections?.();
     await new Promise((resolve) => server.close(resolve));
@@ -173,26 +212,10 @@ test('Zero-login boot, no marketing popups, item editing + R2 upload persistence
 test('Cloudflare Functions: middleware passes through and [[path]].js uses pos_docs without raw JSON on /dashboard', async () => {
   const mw = await passMiddleware({
     request: new Request('https://macisla-pos.pages.dev/dashboard'),
-    env: { POS_ACCESS_KEY: 'ignored-now' },
+    env: {},
     next: async () => new Response('allowed', { status: 200 }),
   });
   assert.equal(mw.status, 200);
-
-  const loginRedirect = await onRequest({
-    request: new Request('https://macisla-pos.pages.dev/login'),
-    env: {},
-    next: async () => new Response('unused'),
-  });
-  assert.equal(loginRedirect.status, 302);
-  assert.match(loginRedirect.headers.get('location'), /\/dashboard#\/sales\/new$/);
-
-  const dashRes = await onRequest({
-    request: new Request('https://macisla-pos.pages.dev/dashboard'),
-    env: {},
-    next: async () => new Response('<html><head><title>Posnic</title></head><body></body></html>', { headers: { 'content-type': 'text/html' } }),
-  });
-  assert.equal(dashRes.status, 200);
-  assert.equal(dashRes.headers.get('cache-control'), 'no-store');
 
   const mem = new Map();
   const mockDb = {

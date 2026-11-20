@@ -21,6 +21,8 @@ export function createLocalStore(dataDir) {
     );
     CREATE INDEX IF NOT EXISTS idx_pos_docs_collection
       ON pos_docs (collection, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pos_docs_collection_created
+      ON pos_docs (collection, created_at DESC);
   `);
 
   const stmtListRecent = db.prepare('SELECT data FROM pos_docs WHERE collection = ? ORDER BY updated_at DESC');
@@ -40,13 +42,32 @@ export function createLocalStore(dataDir) {
     async list(collection) {
       return stmtListRecent.all(collection).map((r) => JSON.parse(r.data));
     },
+    async listRange(collection, { sinceIso = null, untilIso = null, limit = null } = {}) {
+      const clauses = ['collection = ?'];
+      const params = [collection];
+      if (sinceIso) {
+        clauses.push('created_at >= ?');
+        params.push(sinceIso);
+      }
+      if (untilIso) {
+        clauses.push('created_at <= ?');
+        params.push(untilIso);
+      }
+      let sql = `SELECT data FROM pos_docs WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC`;
+      if (limit != null && Number.isFinite(Number(limit)) && Number(limit) > 0) {
+        sql += ' LIMIT ?';
+        params.push(Math.floor(Number(limit)));
+      }
+      return db.prepare(sql).all(...params).map((r) => JSON.parse(r.data));
+    },
     async get(collection, id) {
       const row = stmtGet.get(collection, String(id));
       return row ? JSON.parse(row.data) : null;
     },
     async put(collection, id, doc) {
       const now = new Date().toISOString();
-      stmtPut.run(collection, String(id), JSON.stringify(doc), now, now);
+      const createdAt = doc?.created_date || now;
+      stmtPut.run(collection, String(id), JSON.stringify(doc), createdAt, now);
       return doc;
     },
     async del(collection, id) {

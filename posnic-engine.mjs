@@ -20,6 +20,39 @@ export {
   DEFAULT_TAX_ID,
 };
 
+const CRUD_COLLECTIONS = new Set([
+  'categories',
+  'customers',
+  'suppliers',
+  'users',
+  'expenses',
+  'receivings',
+  'quotes',
+  'invoices',
+  'coupons',
+  'variants',
+  'stocklogs',
+  'taxes',
+  'payments',
+  'units',
+  'denominations',
+  'registers',
+  'branches',
+]);
+
+const MIME_BY_EXT = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  webp: 'image/webp',
+};
+
+const ALLOWED_IMAGE_MIMES = new Set(Object.values(MIME_BY_EXT));
+const MAX_UPLOAD_FILES = 12;
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
 function isObjectId(v) {
   return typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
 }
@@ -39,11 +72,29 @@ function num(v, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function hasNumericValue(v) {
+  if (v === undefined || v === null) return false;
+  const cleaned = String(v).replace(/,/g, '').trim();
+  return cleaned !== '' && Number.isFinite(Number(cleaned));
+}
+
 function bool(v, fallback = false) {
   if (typeof v === 'boolean') return v;
   if (v === 'true' || v === '1' || v === 1 || v === 'enable' || v === 'yes') return true;
   if (v === 'false' || v === '0' || v === 0 || v === 'disable' || v === 'no') return false;
   return fallback;
+}
+
+function sanitizeUser(u) {
+  if (!u || typeof u !== 'object') return u;
+  const clean = { ...u };
+  delete clean.password;
+  delete clean.retype_password;
+  delete clean.app_key;
+  delete clean.old_password;
+  delete clean.new_password;
+  delete clean.confirm_password;
+  return clean;
 }
 
 function fullAcl(role = 'super_admin') {
@@ -169,6 +220,7 @@ export async function ensureSeeded(store) {
         doc.print_a4html ||= PRINT_A4_TEMPLATE;
         doc.print_standard_html ||= PRINT_THERMAL_TEMPLATE;
       } else if (col === 'users') {
+        doc = sanitizeUser(doc);
         doc.access ||= fullAcl(doc.usertype || doc.role || 'super_admin');
       }
       await store.put(col, String(doc._id || doc.id), doc);
@@ -187,19 +239,12 @@ export async function ensureSeeded(store) {
   }
 }
 
-const CORS_HEADERS = {
-  'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'access-control-allow-headers': 'Content-Type, Authorization, X-Requested-With, X-Branch-Id, X-Device-Id',
-};
-
 function jsonResp(body, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
-      ...CORS_HEADERS,
       ...extraHeaders,
     },
   });
@@ -289,6 +334,22 @@ function parseFilterDate(raw, { endOfDay = false, timeZone = 'Asia/Jakarta' } = 
   return ms;
 }
 
+function reportDateBounds(query = {}, timeZone = 'Asia/Jakarta') {
+  const s = String(query.starting_date || '').trim();
+  const e = String(query.ending_date || '').trim();
+  let sinceIso = null;
+  let untilIso = null;
+  if (s) {
+    const ms = parseFilterDate(s, { endOfDay: false, timeZone });
+    if (Number.isFinite(ms)) sinceIso = new Date(ms - 86_400_000).toISOString();
+  }
+  if (e) {
+    const ms = parseFilterDate(e, { endOfDay: true, timeZone });
+    if (Number.isFinite(ms)) untilIso = new Date(ms + 86_400_000).toISOString();
+  }
+  return { sinceIso, untilIso };
+}
+
 function inReportDateRange(isoDate, query = {}, timeZone = 'Asia/Jakarta') {
   const s = String(query.starting_date || '').trim();
   const e = String(query.ending_date || '').trim();
@@ -306,10 +367,8 @@ function inReportDateRange(isoDate, query = {}, timeZone = 'Asia/Jakarta') {
   return true;
 }
 
-function inFilterPeriod(isoDate, filter, timeZone = 'Asia/Jakarta') {
-  if (!filter || filter === 'all') return true;
-  const ts = new Date(isoDate || Date.now()).getTime();
-  if (!Number.isFinite(ts)) return true;
+function periodStartMs(filter, timeZone = 'Asia/Jakarta') {
+  if (!filter || filter === 'all') return null;
   const offset = tzOffsetMs(timeZone);
   const localNow = new Date(Date.now() + offset);
   if (filter === 'day') localNow.setUTCHours(0, 0, 0, 0);
@@ -323,9 +382,52 @@ function inFilterPeriod(isoDate, filter, timeZone = 'Asia/Jakarta') {
     localNow.setUTCMonth(0, 1);
     localNow.setUTCHours(0, 0, 0, 0);
   } else {
-    return true;
+    return null;
   }
-  return ts >= localNow.getTime() - offset;
+  return localNow.getTime() - offset;
+}
+
+function inFilterPeriod(isoDate, filter, timeZone = 'Asia/Jakarta') {
+  const startMs = periodStartMs(filter, timeZone);
+  if (startMs === null) return true;
+  const ts = new Date(isoDate || Date.now()).getTime();
+  return !Number.isFinite(ts) || ts >= startMs;
+}
+
+async function listDocs(store, collection, rangeOpts = {}) {
+  if (typeof store.listRange === 'function') {
+    return store.listRange(collection, rangeOpts);
+  }
+  return store.list(collection);
+}
+
+function calcPriceBreakdown({ base, discountAmount = 0, discountPercent = 0, taxRate = 0, taxType = 'exclusive' }) {
+  const discount = discountAmount > 0 ? discountAmount : (base * discountPercent) / 100;
+  const afterDisc = Math.max(0, base - discount);
+  const isInc = String(taxType || 'exclusive').toLowerCase().includes('inc');
+  const tax = taxRate > 0 ? (isInc ? afterDisc - afterDisc / (1 + taxRate / 100) : (afterDisc * taxRate) / 100) : 0;
+  const total = isInc ? afterDisc : afterDisc + tax;
+  return { base, discount, tax, total };
+}
+
+function unescapeRegexLiteral(s) {
+  return String(s).replace(/\\([.*+?^${}()|[\]\\])/g, '$1');
+}
+
+// Parse Posnic's (?=.*tok) lookahead or plain pattern safely without runtime RegExp execution.
+function extractSearchTokens(rawPattern) {
+  const p = String(rawPattern || '');
+  const tokens = [];
+  const lookaheadRe = /\(\?=\.\*([^)]*)\)/g;
+  let m;
+  while ((m = lookaheadRe.exec(p)) !== null) {
+    const tok = unescapeRegexLiteral(m[1]).trim().toLowerCase();
+    if (tok) tokens.push(tok);
+  }
+  if (tokens.length > 0) return { exact: false, tokens };
+  const exact = p.startsWith('^') && p.endsWith('$');
+  const stripped = unescapeRegexLiteral(p.replace(/^\^/, '').replace(/\$$/, '')).trim().toLowerCase();
+  return { exact, tokens: stripped ? [stripped] : [] };
 }
 
 function itemMargin(r) {
@@ -367,15 +469,19 @@ function applyListFilters(rows, query, searchFields = ['name'], timeZone = 'Asia
           } else if (field === 'category_id') {
             out = out.filter((r) => String(r.category_id || '') === String(cond));
           } else if (typeof cond === 'object' && cond.$regex) {
-            const re = new RegExp(cond.$regex, cond.$options || 'i');
-            out = out.filter((r) =>
-              field === 'all'
-                ? searchFields.some((sf) => re.test(String(r[sf] ?? '')))
-                : re.test(String(r[field] ?? r.name ?? r.sales_id ?? ''))
-            );
+            const { exact, tokens } = extractSearchTokens(cond.$regex);
+            if (tokens.length > 0) {
+              out = out.filter((r) => {
+                if (field === 'all') {
+                  const joined = searchFields.map((sf) => String(r[sf] ?? '')).join(' ').toLowerCase();
+                  return tokens.every((t) => joined.includes(t));
+                }
+                const val = String(r[field] ?? r.name ?? r.sales_id ?? '').toLowerCase();
+                return exact ? val === tokens[0] : tokens.every((t) => val.includes(t));
+              });
+            }
           } else if (typeof cond === 'object' && (cond.$gte !== undefined || cond.$lte !== undefined)) {
-            const isDateField = /date/i.test(field);
-            if (isDateField) {
+            if (/date/i.test(field)) {
               const minMs = cond.$gte ? parseFilterDate(cond.$gte, { endOfDay: false, timeZone }) : -Infinity;
               const maxMs = cond.$lte ? parseFilterDate(cond.$lte, { endOfDay: true, timeZone }) : Infinity;
               out = out.filter((r) => {
@@ -592,41 +698,44 @@ function normalizeItemDoc(body, existing, { cats = [], sups = [], units = [], br
   return merged;
 }
 
-const MIME_BY_EXT = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  bmp: 'image/bmp',
-  webp: 'image/webp',
-  svg: 'image/svg+xml',
-};
-
 function decodeBase64Bytes(rawData) {
   let b64 = String(rawData || '').trim();
   let mime = '';
   const dataUri = b64.match(/^data:([^;]+);base64,(.+)$/i);
   if (dataUri) {
-    mime = dataUri[1];
+    mime = dataUri[1].toLowerCase();
     b64 = dataUri[2];
   }
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return { bytes, mime };
+  try {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { bytes, mime };
+  } catch {
+    return null;
+  }
 }
 
 async function saveUploadedFile(entry, store, folder) {
-  if (!entry || !entry.file || !store.putObject) return '';
-  const ext = String(entry.file.name || 'file.png').split('.').pop().toLowerCase() || 'png';
-  const key = `pos/${folder}/${Date.now()}-${Math.random().toString(16).slice(2, 8)}.${ext}`;
-  await store.putObject(key, await entry.file.arrayBuffer(), entry.file.type || MIME_BY_EXT[ext] || 'application/octet-stream');
-  return `/r2/${key}`;
+  if (!entry || !entry.file) return { url: '' };
+  if (!store.putObject) return { error: 'Object storage is not configured' };
+  const ext = String(entry.file.name || '').split('.').pop().toLowerCase();
+  const mime = String(entry.file.type || MIME_BY_EXT[ext] || '').toLowerCase();
+  if (!ALLOWED_IMAGE_MIMES.has(mime)) {
+    return { error: 'Only PNG, JPEG, GIF, BMP, or WebP images are allowed' };
+  }
+  const buf = await entry.file.arrayBuffer();
+  if (!buf.byteLength || buf.byteLength > MAX_UPLOAD_BYTES) {
+    return { error: 'Image must be non-empty and under 5 MB' };
+  }
+  const key = `pos/${folder}/${Date.now()}-${Math.random().toString(16).slice(2, 8)}.${ext || 'png'}`;
+  await store.putObject(key, buf, mime);
+  return { url: `/r2/${key}` };
 }
 
 export async function handlePosnicRequest(request, store, _env = {}) {
   const method = request.method.toUpperCase();
-  if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (method === 'OPTIONS') return new Response(null, { status: 204 });
 
   await ensureSeeded(store);
 
@@ -642,7 +751,7 @@ export async function handlePosnicRequest(request, store, _env = {}) {
   const sub = segs[1] || '';
   const sub2 = segs[2] || '';
 
-  // ── 1. Health, Runtime Info, Brand, Events & R2 Media ────────────────────────
+  // ── 1. Health, Runtime Info, Client Telemetry, Brand, Events & R2 Media ───────
   if (pathname === '/health') {
     return ok({ ok: true, service: 'macisla-pos', engine: 'cloudflare-d1-r2', version: '1.9.2' });
   }
@@ -659,6 +768,9 @@ export async function handlePosnicRequest(request, store, _env = {}) {
   if (pathname === '/brand.json') {
     return jsonResp({ enabled: false, name: 'Macisla POS' });
   }
+  if (pathname === '/client-errors') {
+    return ok({ ok: true });
+  }
   if (pathname === '/events') {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -669,17 +781,34 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     });
     return new Response(stream, {
       status: 200,
-      headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', 'access-control-allow-origin': '*' },
+      headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' },
     });
   }
   if (root === 'r2' && sub && method === 'GET') {
-    const key = decodeURIComponent(segs.slice(1).join('/'));
+    let key = '';
+    try {
+      key = decodeURIComponent(segs.slice(1).join('/'));
+    } catch {
+      return fail('Invalid object key', 400);
+    }
+    if (!key.startsWith('pos/') || key.includes('..') || key.includes('\\')) {
+      return fail('Forbidden object path', 403);
+    }
     const obj = store.getObject ? await store.getObject(key) : null;
     if (!obj) return fail('Object not found', 404);
+    const contentType = ALLOWED_IMAGE_MIMES.has(obj.contentType) ? obj.contentType : 'application/octet-stream';
     return new Response(obj.body, {
       status: 200,
-      headers: { 'content-type': obj.contentType || 'application/octet-stream', 'cache-control': 'public, max-age=31536000' },
+      headers: {
+        'content-type': contentType,
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; sandbox",
+        'cache-control': 'public, max-age=31536000',
+      },
     });
+  }
+  if (root === 'roles') {
+    return ok([]);
   }
 
   const branches = await store.list('branches');
@@ -732,7 +861,7 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     }
     if (sub === 'getUserDetails') {
       const doc = users.find((u) => u._id === query.id) || currentUser;
-      return doc ? ok(doc) : fail('User not found', 404);
+      return doc ? ok(sanitizeUser(doc)) : fail('User not found', 404);
     }
     if (sub === 'userDefaultBranchSet' || sub === 'userBranchSelection') {
       const targetBranch = branches.find((b) => b._id === query.id) || branch;
@@ -771,24 +900,29 @@ export async function handlePosnicRequest(request, store, _env = {}) {
       return jsonResp({ type: 'success', suggestions, data: suggestions });
     }
     if (sub === 'uploadUserImage' && method === 'POST') {
-      return ok((await saveUploadedFile(files[0], store, 'users')) || 'user.svg', 'Image uploaded');
+      const uploaded = await saveUploadedFile(files[0], store, 'users');
+      if (uploaded.error) return fail(uploaded.error, 400);
+      return ok(uploaded.url || 'user.svg', 'Image uploaded');
     }
     if (sub === 'userProfile' && method === 'POST') {
-      const updated = {
+      const updated = sanitizeUser({
         ...currentUser,
         firstname: body.name || currentUser.firstname,
         lastname: body.lastname ?? currentUser.lastname,
         image: body.image || currentUser.image || 'user.svg',
         updated_date: nowIso(),
-      };
+      });
       await store.put('users', updated._id, updated);
       return ok({ firstname: updated.firstname, lastname: updated.lastname, imagename: updated.image }, 'Profile updated');
     }
-    if (sub === 'userstatusReportTable') return ok({ list: users, total: users.length });
+    if (sub === 'userstatusReportTable') {
+      const safeUsers = users.map(sanitizeUser);
+      return ok({ list: safeUsers, total: safeUsers.length });
+    }
     if (!sub && method === 'POST') {
       const id = newObjectId();
       const uname = String(body.username || body.name || body.app_name || 'staff').trim();
-      const doc = {
+      const doc = sanitizeUser({
         ...body,
         _id: id,
         id,
@@ -800,7 +934,7 @@ export async function handlePosnicRequest(request, store, _env = {}) {
         image: body.image || 'user.svg',
         created_date: nowIso(),
         updated_date: nowIso(),
-      };
+      });
       await store.put('users', id, doc);
       return ok(doc, 'User saved');
     }
@@ -884,7 +1018,7 @@ export async function handlePosnicRequest(request, store, _env = {}) {
       return ok({ register_status: 'Closed' }, 'Register closed');
     }
     if (sub === 'registerReportTable') {
-      const completed = (await store.list('sales')).filter((s) => s.sale_process !== 'Hold' && !/cancel/i.test(String(s.sale_process || '')));
+      const completed = (await listDocs(store, 'sales')).filter((s) => s.sale_process !== 'Hold' && !/cancel/i.test(String(s.sale_process || '')));
       const byMode = new Map();
       let grand = 0;
       for (const s of completed) {
@@ -908,7 +1042,7 @@ export async function handlePosnicRequest(request, store, _env = {}) {
       });
     }
     if (sub === 'registerSaleDetails' || sub === 'getRegisterReportDetails') {
-      const salesAll = (await store.list('sales')).filter((s) => s.sale_process !== 'Hold');
+      const salesAll = (await listDocs(store, 'sales', { limit: 200 })).filter((s) => s.sale_process !== 'Hold');
       return ok({ ...paginateReport(salesAll, query), sales: salesAll });
     }
   }
@@ -916,11 +1050,20 @@ export async function handlePosnicRequest(request, store, _env = {}) {
   // ── 4. Dashboard ─────────────────────────────────────────────────────────────
   if (root === 'dashboard') {
     const filter = query.filter || 'day';
-    const sales = (await store.list('sales')).filter(
+    const pStart = periodStartMs(filter, branchTz);
+    const rangeOpts = pStart !== null ? { sinceIso: new Date(pStart - 60_000).toISOString() } : {};
+
+    const [rawSales, rawReceivings, rawExpenses] = await Promise.all([
+      listDocs(store, 'sales', rangeOpts),
+      listDocs(store, 'receivings', rangeOpts),
+      listDocs(store, 'expenses', rangeOpts),
+    ]);
+
+    const sales = rawSales.filter(
       (s) => s.sale_process !== 'Hold' && !/cancel/i.test(String(s.sale_process || '')) && inFilterPeriod(s.created_date || s.date, filter, branchTz)
     );
-    const receivings = (await store.list('receivings')).filter((r) => inFilterPeriod(r.created_date || r.date, filter, branchTz));
-    const expenses = (await store.list('expenses')).filter((e) => inFilterPeriod(e.created_date || e.date, filter, branchTz));
+    const receivings = rawReceivings.filter((r) => inFilterPeriod(r.created_date || r.date, filter, branchTz));
+    const expenses = rawExpenses.filter((e) => inFilterPeriod(e.created_date || e.date, filter, branchTz));
 
     let total_sales = 0, total_tax = 0, total_cash = 0, total_upi = 0, total_card = 0, cogs = 0;
     const itemMap = new Map();
@@ -938,7 +1081,9 @@ export async function handlePosnicRequest(request, store, _env = {}) {
         const name = li.item_name || li.name || 'Item';
         const prev = itemMap.get(name) || { item_name: name, total_qty: 0, total_amount: 0 };
         prev.total_qty += num(li.item_quantity || li.quantity, 1);
-        prev.total_amount += num(li.item_price_total || li.selling_price) || num(li.item_price) * num(li.item_quantity, 1);
+        prev.total_amount += hasNumericValue(li.item_price_total)
+          ? num(li.item_price_total)
+          : num(li.item_price ?? li.selling_price) * num(li.item_quantity, 1);
         itemMap.set(name, prev);
       }
     }
@@ -971,8 +1116,7 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     if (sub === 'getDashboardExpiredProducts') return ok({ expired_stock_items: [] });
     if (sub === 'getPendingActivities') return ok([]);
     if (sub === 'setupChecklist') {
-      const items = await store.list('items');
-      const taxes = await store.list('taxes');
+      const [items, taxes] = await Promise.all([store.list('items'), store.list('taxes')]);
       return ok({
         checks: [
           { key: 'outlet', done: Boolean(branch?.branch_name) },
@@ -1035,35 +1179,58 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     }
 
     if (sub === 'pricePreview' && method === 'POST') {
-      const base = num(body.price);
-      const discAmt = num(body.discount_amount);
-      const discount = discAmt > 0 ? discAmt : (base * num(body.discount_percentage)) / 100;
-      const afterDisc = Math.max(0, base - discount);
-      const taxRate = num(body.tax);
-      const isInc = String(body.tax_type || 'exclusive').toLowerCase().includes('inc');
-      const tax = isInc ? afterDisc - afterDisc / (1 + taxRate / 100) : (afterDisc * taxRate) / 100;
-      const total = isInc ? afterDisc : afterDisc + tax;
-      return ok({ base, discount, tax, total });
+      return ok(
+        calcPriceBreakdown({
+          base: num(body.price),
+          discountAmount: num(body.discount_amount),
+          discountPercent: num(body.discount_percentage),
+          taxRate: num(body.tax),
+          taxType: body.tax_type,
+        })
+      );
     }
 
     if (sub === 'uploadItemMultiImage' && method === 'POST') {
+      if (!store.putObject) return fail('R2 object storage is not configured', 500);
       const pending = Array.isArray(body.items_image) ? body.items_image : [];
-      const out = [];
+      if (!pending.length || pending.length > MAX_UPLOAD_FILES) {
+        return fail(`Upload between 1 and ${MAX_UPLOAD_FILES} images`, 400);
+      }
+      const parsedEntries = [];
       for (const entry of pending) {
         const cleanName = String(entry?.name || 'image.png').replace(/[^a-zA-Z0-9._-]/g, '-');
-        const ext = (cleanName.split('.').pop() || 'png').toLowerCase();
-        const key = `pos/items/${Date.now()}-${Math.random().toString(16).slice(2, 8)}-${cleanName}`;
-        const { bytes, mime } = decodeBase64Bytes(entry?.data || '');
-        if (store.putObject && bytes.byteLength > 0) {
-          await store.putObject(key, bytes.buffer, mime || MIME_BY_EXT[ext] || 'application/octet-stream');
+        const ext = (cleanName.split('.').pop() || '').toLowerCase();
+        const extMime = MIME_BY_EXT[ext] || '';
+        const decoded = decodeBase64Bytes(entry?.data || '');
+        if (!decoded) return fail('Invalid base64 image data', 400);
+        const contentType = decoded.mime || extMime;
+        if (!ALLOWED_IMAGE_MIMES.has(contentType) || (decoded.mime && !ALLOWED_IMAGE_MIMES.has(decoded.mime))) {
+          return fail('Only PNG, JPEG, GIF, BMP, or WebP images are allowed', 400);
         }
-        out.push({ name: `/r2/${key}`, size: num(entry?.size, bytes.byteLength), cover: entry?.cover || 'no' });
+        if (!decoded.bytes.byteLength || decoded.bytes.byteLength > MAX_UPLOAD_BYTES) {
+          return fail('Each image must be non-empty and under 5 MB', 400);
+        }
+        parsedEntries.push({
+          cleanName,
+          bytes: decoded.bytes,
+          contentType,
+          size: num(entry?.size, decoded.bytes.byteLength),
+          cover: entry?.cover === 'yes' ? 'yes' : 'no',
+        });
+      }
+      const out = [];
+      for (const item of parsedEntries) {
+        const key = `pos/items/${Date.now()}-${Math.random().toString(16).slice(2, 8)}-${item.cleanName}`;
+        await store.putObject(key, item.bytes.buffer, item.contentType);
+        out.push({ name: `/r2/${key}`, size: item.size, cover: item.cover });
       }
       return ok(out, 'Images uploaded');
     }
 
     if (sub === 'uploadItemImage' && method === 'POST') {
-      return ok((await saveUploadedFile(files[0], store, 'items')) || 'item.svg', 'Image uploaded');
+      const uploaded = await saveUploadedFile(files[0], store, 'items');
+      if (uploaded.error) return fail(uploaded.error, 400);
+      return ok(uploaded.url || 'item.svg', 'Image uploaded');
     }
 
     if (sub === 'createFamily' && method === 'POST') {
@@ -1194,7 +1361,6 @@ export async function handlePosnicRequest(request, store, _env = {}) {
       const existing = await store.get('items', sub);
       if (!existing) return fail('Item not found', 404);
       const payload = { ...body };
-      // /items/:id/details updates metadata/prices while preserving live stock count.
       if (sub2 === 'details') delete payload.available_quantity;
       const [cats, sups, units] = await Promise.all([store.list('categories'), store.list('suppliers'), store.list('units')]);
       const updated = normalizeItemDoc(payload, existing, { cats, sups, units, branchId: DEFAULT_BRANCH_ID, userName: currentUser?.user_name, id: sub });
@@ -1280,10 +1446,9 @@ export async function handlePosnicRequest(request, store, _env = {}) {
 
   // ── 7. Sales & Unlocked Reports (`/sales/*`) ─────────────────────────────────
   if (root === 'sales') {
-    const sales = await store.list('sales');
-
     if (sub === 'getLatestSales') {
       const wantHold = String(query.type || '').toLowerCase() === 'hold';
+      const sales = await listDocs(store, 'sales', wantHold ? {} : { limit: 60 });
       const rows = sales
         .filter((s) => (wantHold ? s.sale_process === 'Hold' : s.sale_process !== 'Hold'))
         .sort((a, b) => String(b.created_date || '').localeCompare(String(a.created_date || '')))
@@ -1302,6 +1467,7 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     }
 
     if (sub === 'parked' && sub2 === 'clear' && method === 'POST') {
+      const sales = await store.list('sales');
       let cleared = 0;
       for (const s of sales) {
         if (s.sale_process === 'Hold') {
@@ -1320,7 +1486,9 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     }
 
     if (sub === 'hold' && (method === 'POST' || method === 'PUT')) {
-      const saved = await saveSale(body, store, branch, currentUser, { hold: true });
+      const maybeId = String(body.sales_id || '').trim();
+      const existing = isObjectId(maybeId) ? await store.get('sales', maybeId) : null;
+      const saved = await saveSale(body, store, branch, currentUser, { hold: true, existing });
       return ok({ sales_id: saved._id, id: saved._id, _id: saved._id }, 'Sale parked successfully');
     }
 
@@ -1329,9 +1497,7 @@ export async function handlePosnicRequest(request, store, _env = {}) {
       if (!existing) return fail('Sale not found', 404);
       const updated = { ...existing, sale_process: 'Cancel', payment_status: 'Cancelled', updated_date: nowIso() };
       await store.put('sales', sub2, updated);
-      if (existing.sale_process !== 'Hold' && !/cancel/i.test(String(existing.sale_process || ''))) {
-        await adjustInventoryForSale(normalizeItemsPayload(existing.items), store, +1);
-      }
+      await applyStockDelta(saleItemStockMap(existing), new Map(), store);
       return ok(updated, 'Sale cancelled');
     }
 
@@ -1341,7 +1507,9 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     }
 
     if (!sub && method === 'POST') {
-      const saved = await saveSale(body, store, branch, currentUser, { hold: false });
+      const maybeId = String(body.sales_id || '').trim();
+      const existing = isObjectId(maybeId) ? await store.get('sales', maybeId) : null;
+      const saved = await saveSale(body, store, branch, currentUser, { hold: false, existing });
       return ok(
         {
           sales_id: saved._id, id: saved._id, _id: saved._id, bill_no: saved.sales_id,
@@ -1353,6 +1521,7 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     }
 
     if (!sub && method === 'GET') {
+      const sales = await listDocs(store, 'sales');
       const nonHold = sales.filter((s) => s.sale_process !== 'Hold');
       const { list, total, allFiltered } = applyListFilters(nonHold, query, ['sales_id', 'customer_name', 'sold_by', 'payment_mode'], branchTz);
       const payTotals = new Map();
@@ -1393,11 +1562,12 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     if (isObjectId(sub) && (method === 'PUT' || method === 'PATCH')) {
       const existing = await store.get('sales', sub);
       if (!existing) return fail('Sale not found', 404);
-      const saved = await saveSale({ ...body, sales_id: sub, alternative_id: existing.sales_id }, store, branch, currentUser, { hold: false });
+      const saved = await saveSale(body, store, branch, currentUser, { hold: false, existing });
       return ok(saved, 'Sale updated');
     }
 
     if (SALES_REPORT_SUBROUTES.has(sub)) {
+      const sales = await listDocs(store, 'sales', reportDateBounds(query, branchTz));
       return buildSalesReportResponse(sub, sales, query, store, branch, branchTz);
     }
   }
@@ -1438,13 +1608,52 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     }
     if (sub === 'getDefaultCustomer') {
       const customers = await store.list('customers');
-      const cust = customers.find((c) => c._id === branch.default_customer) || customers[0] || {};
-      return ok({ customer_id: cust._id || DEFAULT_CUSTOMER_ID, customer_name: cust.name || 'Walk-in Customer', customer: cust });
+      const c = customers.find((x) => x._id === branch.default_customer) || customers[0] || {};
+      const cid = c._id || DEFAULT_CUSTOMER_ID;
+      const cname = c.customer_name || c.name || 'Walk-in Customer';
+      return ok({
+        customer_id: cid,
+        customer_name: cname,
+        customer: {
+          ...c,
+          _id: cid,
+          id: cid,
+          customer_id: cid,
+          customer_name: cname,
+          customer_phone: c.customer_phone || c.phone || '0000000000',
+          customer_email: c.customer_email || c.email || 'walkin@macisla.com',
+          customer_address: c.customer_address || c.address || 'Jakarta',
+          customer_state: c.customer_state || c.state || '',
+          customer_country: c.customer_country || c.country || 'Indonesia',
+          customer_gst_type: c.customer_gst_type || '',
+          customer_gst_number: c.customer_gst_number || '',
+          customer_balance: num(c.customer_balance),
+          customer_partial: num(c.partial_balance ?? c.customer_partial),
+        },
+      });
     }
     if (sub === 'getDefaultSupplier') {
       const suppliers = await store.list('suppliers');
-      const sup = suppliers.find((s) => s._id === branch.default_supplier) || suppliers[0] || {};
-      return ok({ supplier_id: sup._id || DEFAULT_SUPPLIER_ID, supplier_name: sup.name || 'Macisla Supply Co.', supplier: sup });
+      const s = suppliers.find((x) => x._id === branch.default_supplier) || suppliers[0] || {};
+      const sid = s._id || DEFAULT_SUPPLIER_ID;
+      const sname = s.supplier_name || s.name || 'Macisla Supply Co.';
+      return ok({
+        supplier_id: sid,
+        supplier_name: sname,
+        supplier: {
+          ...s,
+          _id: sid,
+          id: sid,
+          supplier_id: sid,
+          supplier_name: sname,
+          supplier_phone: s.supplier_phone || s.phone || '+62 21-555-0199',
+          supplier_email: s.supplier_email || s.email || 'supply@macisla.com',
+          supplier_address: s.supplier_address || s.address || 'Jl. Kemang Raya No. 12, Jakarta',
+          supplier_state: s.supplier_state || s.state || 'DKI Jakarta',
+          supplier_gst_type: s.supplier_gst_type || '',
+          supplier_gst_number: s.supplier_gst_number || '',
+        },
+      });
     }
     if (sub === 'getJSONCountry') return ok(COUNTRIES);
     if (sub === 'getJSONState') return ok(STATES_BY_COUNTRY[Number(query.id || query.country_id || 102)] || STATES_BY_COUNTRY[102]);
@@ -1465,7 +1674,8 @@ export async function handlePosnicRequest(request, store, _env = {}) {
 
   // ── 9. Expenses, Receivings & Auxiliary Modules ──────────────────────────────
   if (root === 'expenses' && sub === 'expensesReportTable') {
-    const expenses = (await store.list('expenses')).filter((e) => inReportDateRange(e.created_date || e.date, query, branchTz));
+    const rawExpenses = await listDocs(store, 'expenses', reportDateBounds(query, branchTz));
+    const expenses = rawExpenses.filter((e) => inReportDateRange(e.created_date || e.date, query, branchTz));
     const rows = expenses.map((e) => ({
       ...e,
       amount: num(e.amount ?? e.expense_amount),
@@ -1478,7 +1688,8 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     return ok(paginateReport(rows, query));
   }
   if (root === 'receivings' && ['receivingReportTable', 'returnReceivingReportTable', 'supplierReceivingReportTable'].includes(sub)) {
-    const recs = (await store.list('receivings')).filter((r) => inReportDateRange(r.created_date || r.date, query, branchTz));
+    const rawRecs = await listDocs(store, 'receivings', reportDateBounds(query, branchTz));
+    const recs = rawRecs.filter((r) => inReportDateRange(r.created_date || r.date, query, branchTz));
     let purchased = 0, paid = 0;
     const rows = recs.map((r) => {
       const tot = num(r.receiving_total ?? r.total_amount);
@@ -1503,7 +1714,12 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     const id = newObjectId();
     const doc = { ...body, _id: id, id, created_date: nowIso(), updated_date: nowIso() };
     await store.put('receivings', id, doc);
-    await adjustInventoryForSale(normalizeItemsPayload(body.items), store, +1);
+    const recvEffects = new Map();
+    for (const li of normalizeItemsPayload(body.items)) {
+      const itemId = String(li.item_id?._id || li.item_id || li.product_id || li._id || '').trim();
+      if (itemId) recvEffects.set(itemId, (recvEffects.get(itemId) || 0) + num(li.item_quantity ?? li.quantity, 1));
+    }
+    await applyStockDelta(new Map(), recvEffects, store);
     return ok(doc, 'Receiving saved successfully');
   }
   if (root === 'shifts') return ok({ rows: [], active_shift: null });
@@ -1514,29 +1730,38 @@ export async function handlePosnicRequest(request, store, _env = {}) {
     return ok(applyListFilters(logs, query, ['item_name', 'process', 'reference'], branchTz));
   }
 
-  // ── 10. Generic CRUD ─────────────────────────────────────────────────────────
+  // ── 10. Allowlisted Generic CRUD ─────────────────────────────────────────────
   const collection = root || 'misc';
+  if (!CRUD_COLLECTIONS.has(collection)) {
+    return method === 'GET' ? ok({ list: [], total: 0 }) : fail('Unknown resource', 404);
+  }
+
   if (!sub && method === 'GET') {
     const docs = await store.list(collection);
-    const { list, total } = applyListFilters(docs, query, ['name', 'title', 'phone', 'email', 'description', 'sales_id'], branchTz);
+    const cleaned = collection === 'users' ? docs.map(sanitizeUser) : docs;
+    const { list, total } = applyListFilters(cleaned, query, ['name', 'title', 'phone', 'email', 'description', 'sales_id'], branchTz);
     return ok({ list, total });
   }
   if (sub && method === 'GET') {
     const doc = await store.get(collection, sub);
-    return doc ? ok(doc) : ok({ list: [], total: 0 });
+    if (!doc) return ok({ list: [], total: 0 });
+    return ok(collection === 'users' ? sanitizeUser(doc) : doc);
   }
   if (!sub && method === 'POST') {
     const id = newObjectId();
-    const doc = { ...body, _id: id, id, created_date: nowIso(), updated_date: nowIso() };
+    const baseDoc = collection === 'users' ? sanitizeUser(body) : body;
+    const doc = { ...baseDoc, _id: id, id, created_date: nowIso(), updated_date: nowIso() };
     await store.put(collection, id, doc);
     return ok(doc, 'Saved successfully');
   }
   if (sub && (method === 'PUT' || method === 'PATCH' || method === 'POST')) {
     const existing = await store.get(collection, sub);
     if (!existing && !isObjectId(sub)) return ok({ ok: true });
-    const updated = { ...(existing || { created_date: nowIso() }), ...body, _id: sub, id: sub, updated_date: nowIso() };
-    await store.put(collection, sub, updated);
-    return ok(updated, 'Updated successfully');
+    const baseBody = collection === 'users' ? sanitizeUser(body) : body;
+    const updated = { ...(existing || { created_date: nowIso() }), ...baseBody, _id: sub, id: sub, updated_date: nowIso() };
+    const finalDoc = collection === 'users' ? sanitizeUser(updated) : updated;
+    await store.put(collection, sub, finalDoc);
+    return ok(finalDoc, 'Updated successfully');
   }
   if (method === 'DELETE') {
     const rawIds = [];
@@ -1583,7 +1808,11 @@ async function buildSalesReportResponse(sub, sales, query, store, branch, branch
         item_discount_percentage: num(li.item_discount_percentage),
         tax: num(li.tax),
         tax_type: String(li.tax_type || 'exclusive').toLowerCase(),
-        total_amount: num(li.item_price_total ?? li.total_amount) || num(li.item_price ?? li.selling_price) * num(li.item_quantity, 1),
+        total_amount: hasNumericValue(li.item_price_total)
+          ? num(li.item_price_total)
+          : hasNumericValue(li.total_amount)
+            ? num(li.total_amount)
+            : num(li.item_price ?? li.selling_price) * num(li.item_quantity, 1),
       }));
       return {
         ...s,
@@ -1634,7 +1863,20 @@ async function buildSalesReportResponse(sub, sales, query, store, branch, branch
         const key = String(li.item_id || li.item_name || 'item');
         const qty = num(li.item_quantity ?? li.quantity, 1);
         const subTot = num(li.item_price ?? li.selling_price) * qty;
-        const tot = num(li.item_price_total ?? li.total_amount) || subTot;
+        const tot = hasNumericValue(li.item_price_total)
+          ? num(li.item_price_total)
+          : hasNumericValue(li.total_amount)
+            ? num(li.total_amount)
+            : subTot;
+        const unitDisc = num(li.item_discount);
+        const discPct = num(li.item_discount_percentage);
+        const breakdown = calcPriceBreakdown({
+          base: subTot,
+          discountAmount: unitDisc > 0 ? unitDisc * qty : 0,
+          discountPercent: unitDisc > 0 ? 0 : discPct,
+          taxRate: num(li.tax),
+          taxType: li.tax_type,
+        });
         const cost = num(li.company_price_total) || num(li.company_price) * qty;
         const itemDoc = stockById.get(String(li.item_id));
         const prev = prodMap.get(key) || {
@@ -1645,8 +1887,8 @@ async function buildSalesReportResponse(sub, sales, query, store, branch, branch
         };
         prev.product_qty += qty;
         prev.product_subtotal += subTot;
-        prev.product_discount += num(li.item_discount) * qty;
-        prev.product_tax += (subTot * num(li.tax)) / 100;
+        prev.product_discount += breakdown.discount;
+        prev.product_tax += breakdown.tax;
         prev.product_total += tot;
         prev.product_profit += tot - cost;
         prodMap.set(key, prev);
@@ -1672,7 +1914,11 @@ async function buildSalesReportResponse(sub, sales, query, store, branch, branch
       for (const li of normalizeItemsPayload(s.items)) {
         const key = byCat ? (li.category_name || 'General') : String(li.item_id || li.item_name || 'item');
         const qty = num(li.item_quantity ?? li.quantity, 1);
-        const tot = num(li.item_price_total ?? li.total_amount) || num(li.item_price ?? li.selling_price) * qty;
+        const tot = hasNumericValue(li.item_price_total)
+          ? num(li.item_price_total)
+          : hasNumericValue(li.total_amount)
+            ? num(li.total_amount)
+            : num(li.item_price ?? li.selling_price) * qty;
         const cost = num(li.company_price_total) || num(li.company_price) * qty;
         const prev = map.get(key) || { name: byCat ? key : (li.item_name || li.name || 'Item'), item_quantity: 0, sales_count: 0, sales_profit: 0, total_amount: 0 };
         prev.item_quantity += qty;
@@ -1784,25 +2030,40 @@ async function buildSalesReportResponse(sub, sales, query, store, branch, branch
   return ok(paginateReport([], query));
 }
 
-async function adjustInventoryForSale(lineItems, store, sign) {
+function saleItemStockMap(saleDoc) {
+  const map = new Map();
+  if (!saleDoc || saleDoc.sale_process === 'Hold' || /cancel/i.test(String(saleDoc.sale_process || ''))) {
+    return map;
+  }
+  const sign = /return/i.test(String(saleDoc.sale_process || '')) ? +1 : -1;
+  for (const li of normalizeItemsPayload(saleDoc.items)) {
+    const itemId = String(li.item_id?._id || li.item_id || li.product_id || li._id || '').trim();
+    if (!itemId) continue;
+    map.set(itemId, (map.get(itemId) || 0) + sign * num(li.item_quantity ?? li.quantity, 1));
+  }
+  return map;
+}
+
+async function applyStockDelta(oldMap, newMap, store) {
+  const itemIds = new Set([...oldMap.keys(), ...newMap.keys()]);
   const now = nowIso();
-  for (const li of lineItems) {
-    if (!li.item_id) continue;
-    const item = await store.get('items', li.item_id);
+  for (const itemId of itemIds) {
+    const delta = (newMap.get(itemId) || 0) - (oldMap.get(itemId) || 0);
+    if (delta === 0) continue;
+    const item = await store.get('items', itemId);
     if (item && item.track_inventory) {
-      const nextQty = Math.max(0, num(item.available_quantity) + sign * num(li.item_quantity, 1));
+      const nextQty = Math.max(0, num(item.available_quantity) + delta);
       await store.put('items', item._id, { ...item, available_quantity: nextQty, updated_date: now });
     }
   }
 }
 
-async function saveSale(body, store, branch, currentUser, { hold = false } = {}) {
+async function saveSale(body, store, branch, currentUser, { hold = false, existing = null } = {}) {
   const existingId = String(body.sales_id || '').trim();
-  const isUpdate = isObjectId(existingId);
-  const id = isUpdate ? existingId : newObjectId();
-  const counters = (await store.get('meta', 'counters')) || { _id: 'counters', sale_seq: 1000 };
-  let billNo = body.alternative_id;
-  if (!billNo || !isUpdate) {
+  const id = existing?._id || (isObjectId(existingId) ? existingId : newObjectId());
+  let billNo = body.alternative_id || existing?.sales_id;
+  if (!billNo) {
+    const counters = (await store.get('meta', 'counters')) || { _id: 'counters', sale_seq: 1000 };
     counters.sale_seq = num(counters.sale_seq, 1000) + 1;
     await store.put('meta', 'counters', counters);
     billNo = `${branch.sales_prefix || 'S'}-${counters.sale_seq}`;
@@ -1811,7 +2072,7 @@ async function saveSale(body, store, branch, currentUser, { hold = false } = {})
   const lineItems = normalizeItemsPayload(body.items).map((li) => {
     const qty = num(li.item_quantity ?? li.quantity, 1);
     const unitPrice = num(li.sale_inline_item_price ?? li.item_price ?? li.selling_price);
-    const total = num(li.item_price_total) || unitPrice * qty;
+    const total = hasNumericValue(li.item_price_total) ? num(li.item_price_total) : unitPrice * qty;
     return {
       ...li,
       item_id: String(li.item_id?._id || li.item_id || li.product_id || li._id || ''),
@@ -1820,52 +2081,64 @@ async function saveSale(body, store, branch, currentUser, { hold = false } = {})
       selling_price: unitPrice,
       item_price: unitPrice,
       item_price_total: total,
-      company_price_total: num(li.company_price_total ?? li.company_price) * (li.company_price_total ? 1 : qty),
+      company_price_total: hasNumericValue(li.company_price_total)
+        ? num(li.company_price_total)
+        : num(li.company_price) * qty,
       item_discount: num(li.sale_inline_discount_value ?? li.item_discount ?? li.discount_amount),
       item_discount_percentage: num(li.sale_inline_discount_pervalue ?? li.item_discount_percentage ?? li.discount_percentage),
       tax: num(li.tax),
-      tax_type: li.tax_type || 'Exclusive',
+      tax_type: String(li.tax_type || 'exclusive').toLowerCase(),
     };
   });
 
-  const computedTotal = num(body.sales_total) || lineItems.reduce((sum, li) => sum + num(li.item_price_total), 0);
-  const computedCost = num(body.sales_total_company_price) || lineItems.reduce((sum, li) => sum + num(li.company_price_total), 0);
+  const lineSum = lineItems.reduce((sum, li) => sum + num(li.item_price_total), 0);
+  const computedTotal = hasNumericValue(body.sales_total) ? num(body.sales_total) : lineSum;
+  const computedSubTotal = hasNumericValue(body.sales_sub_total) ? num(body.sales_sub_total) : lineSum;
+  const computedCost = hasNumericValue(body.sales_total_company_price)
+    ? num(body.sales_total_company_price)
+    : lineItems.reduce((sum, li) => sum + num(li.company_price_total), 0);
+
   const now = nowIso();
+  const createdDate = existing?.created_date || now;
+  const saleDate = body.date || existing?.date || createdDate;
+  const stringDate = body.date || existing?.string_date || saleDate;
 
   const doc = {
+    ...(existing || {}),
     _id: id, id, sales_document_id: id, sales_id: billNo,
-    branch_id: branch._id, register_id: body.register_id || DEFAULT_REGISTER_ID,
-    user_id: currentUser?._id || DEFAULT_ADMIN_ID, user_name: currentUser?.user_name || 'admin',
-    sold_by: currentUser ? `${currentUser.firstname || ''} ${currentUser.lastname || ''}`.trim() : 'Macisla Admin',
-    customer_id: body.customer_id || DEFAULT_CUSTOMER_ID,
-    customer_name: body.customer_name || 'Walk-in Customer',
-    customer_phone: body.customer_phone || '0000000000',
-    customer_email: body.customer_email || '',
-    customer_address: body.customer_address || '',
-    payment_mode: hold ? '' : body.payment_mode || 'Cash',
-    payment_status: hold ? 'Unpaid' : body.payment_status || 'Paid',
-    sale_process: hold ? 'Hold' : body.sale_process || 'Add',
+    branch_id: branch._id, register_id: body.register_id || existing?.register_id || DEFAULT_REGISTER_ID,
+    user_id: existing?.user_id || currentUser?._id || DEFAULT_ADMIN_ID,
+    user_name: existing?.user_name || currentUser?.user_name || 'admin',
+    sold_by: existing?.sold_by || (currentUser ? `${currentUser.firstname || ''} ${currentUser.lastname || ''}`.trim() : 'Macisla Admin'),
+    customer_id: body.customer_id || existing?.customer_id || DEFAULT_CUSTOMER_ID,
+    customer_name: body.customer_name || existing?.customer_name || 'Walk-in Customer',
+    customer_phone: body.customer_phone ?? existing?.customer_phone ?? '0000000000',
+    customer_email: body.customer_email ?? existing?.customer_email ?? '',
+    customer_address: body.customer_address ?? existing?.customer_address ?? '',
+    payment_mode: hold ? '' : body.payment_mode || existing?.payment_mode || 'Cash',
+    payment_status: hold ? 'Unpaid' : body.payment_status || existing?.payment_status || 'Paid',
+    sale_process: hold ? 'Hold' : body.sale_process || (existing && existing.sale_process !== 'Hold' ? existing.sale_process : 'Add'),
     items: lineItems,
     number_of_items: lineItems.length,
-    sales_sub_total: num(body.sales_sub_total) || computedTotal,
+    sales_sub_total: computedSubTotal,
     sales_total: computedTotal,
     total_amount: computedTotal,
     sales_total_company_price: computedCost,
-    tax: num(body.tax),
-    discount: num(body.discount),
-    extra_discount: num(body.extra_discount),
-    extra_discount_type: body.extra_discount_type || 'price',
-    sales_description: body.sales_description || '',
-    payment_description: body.payment_description || '',
-    discount_description: body.discount_description || '',
-    date: body.date || now,
-    string_date: body.date || now,
-    parked_at: hold ? now : undefined,
-    created_date: now,
+    tax: hasNumericValue(body.tax) ? num(body.tax) : num(existing?.tax),
+    discount: hasNumericValue(body.discount) ? num(body.discount) : num(existing?.discount),
+    extra_discount: hasNumericValue(body.extra_discount) ? num(body.extra_discount) : num(existing?.extra_discount),
+    extra_discount_type: body.extra_discount_type || existing?.extra_discount_type || 'price',
+    sales_description: body.sales_description ?? existing?.sales_description ?? '',
+    payment_description: body.payment_description ?? existing?.payment_description ?? '',
+    discount_description: body.discount_description ?? existing?.discount_description ?? '',
+    date: saleDate,
+    string_date: stringDate,
+    parked_at: hold ? existing?.parked_at || now : undefined,
+    created_date: createdDate,
     updated_date: now,
   };
 
   await store.put('sales', id, doc);
-  if (!hold) await adjustInventoryForSale(lineItems, store, /return/i.test(doc.sale_process) ? +1 : -1);
+  await applyStockDelta(saleItemStockMap(existing), saleItemStockMap(doc), store);
   return doc;
 }

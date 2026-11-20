@@ -136,7 +136,6 @@ export const SEED_DATA = {
       lastname: 'Admin',
       email: 'admin@macisla.com',
       phone: '+62 812-8888-9900',
-      password: 'admin',
       usertype: 'super_admin',
       role: 'super_admin',
       image: 'user.svg',
