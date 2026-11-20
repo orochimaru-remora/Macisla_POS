@@ -1,37 +1,23 @@
-# Macisla_POS (`pos.macisla.com`)
+# Macisla POS (`https://macisla-pos.pages.dev`)
 
-**100% original [Posnic POS](https://github.com/Posnic/POS) frontend UI/UX & workflow**, routed to a lightweight **Cloudflare Pages Functions + Cloudflare D1 + Cloudflare R2** backend (zero MongoDB, zero Express/VPS required).
+Posnic POS frontend running on **Cloudflare Pages Functions + Cloudflare D1 (`pos_docs`) + Cloudflare R2 (`pos/*`)** — zero MongoDB, zero login screen, zero marketing popups, editable items saved in D1/R2, and all Reports unlocked.
 
 ## Architecture
 
-- **Frontend (Unmodified Posnic Build)**: `login.html`, `dashboard.html`, `script/`, `style/`, `static/`, `fonts/`, `languages/`, `sw.js` — served directly from Cloudflare Pages CDN edge (`_routes.json` excludes all static assets from Worker invocations).
-- **Cloudflare Backend (`functions/[[path]].js` + `posnic-engine.mjs`)**: Implements Posnic's REST API protocol (`{ type: "success", data: ... }`) on top of **Cloudflare D1** (`macisla`, UUID `9d540277-0b77-42eb-bbea-405145543d95`) and **Cloudflare R2** (`macisla` bucket, `pos/*` prefix).
-- **Local Dev Server (`server.js` + `storage.js`)**: Runs the exact same `posnic-engine.mjs` against a local SQLite database (`data/macisla_pos.db`) using Node's built-in `node:sqlite` (zero npm dependencies).
+- **Boot & UI Overrides (`static/macisla-boot.js` + `functions/[[path]].js`)**: Injects `/static/macisla-boot.js` into `/dashboard` via `HTMLRewriter` so the browser enters `#/sales/new` directly as `admin`, locks `userplan=premium`, and permanently suppresses desktop/demo marketing nudges.
+- **Pass-through Middleware (`functions/_middleware.js`)**: Zero passcode gate. Add Cloudflare Zero Trust Access in Cloudflare Dashboard later if you want perimeter auth without touching code.
+- **API & Persistence (`posnic-engine.mjs` + `schema.sql`)**: Serves Posnic's REST API backed by Cloudflare D1 table `pos_docs` and R2 bucket `R2_BUCKET`. Seeds the starter catalog (3 Macisla services, 0 fake sales) once when empty.
+- **Local Dev (`server.js` + `storage.js`)**: Runs the same engine against local SQLite (`data/macisla_pos.db`) and `data/uploads/`.
 
-## Quick Start (Local)
-
-```bash
-npm start
-# Open http://127.0.0.1:3088/login.html
-```
-
-Default logins (and one-click demo buttons on `login.html`):
-- **Admin**: `admin` / `admin`
-- **Manager**: `manager` / `manager`
-- **Cashier**: `cashier` / `cashier`
-
-## Deploy to `pos.macisla.com` (Cloudflare Pages)
-
-1. Connect `orochimaru-remora/Macisla_POS` in **Cloudflare Dashboard → Workers & Pages → Create → Pages**.
-2. Build command: *(leave empty)* · Build output directory: `.`
-3. Bind your existing Cloudflare resources in **Settings → Bindings** (already declared in `wrangler.toml`):
-   - **D1 Database**: Variable `DB` → `macisla` (`9d540277-0b77-42eb-bbea-405145543d95`)
-   - **R2 Bucket**: Variable `R2_BUCKET` → `macisla`
-4. Add custom domain `pos.macisla.com` under **Custom domains**.
-5. Optional: run `wrangler d1 execute macisla --remote --file=schema.sql` (the table also self-initializes automatically on the first request).
-
-## Run Tests
+## Local Commands
 
 ```bash
-npm test
+npm start   # http://127.0.0.1:3088
+npm test    # node --test test/pos.test.js
 ```
+
+## Cloudflare Pages Setup (`wrangler.toml`)
+
+- **D1 binding**: `DB` -> `macisla` (`9d540277-0b77-42eb-bbea-405145543d95`)
+- **R2 binding**: `R2_BUCKET` -> `macisla`
+- Build command: *(empty)* · Output directory: `.`

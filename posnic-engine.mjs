@@ -1,9 +1,6 @@
-// Macisla_POS — Original Posnic API Engine for Cloudflare D1 + R2 & Local SQLite
-// Serves the Posnic frontend while routing all persistence to D1/SQLite & R2 and syncing catalog/settings via seed-data.mjs.
+// Macisla POS — Posnic REST API Engine for Cloudflare D1 + R2 and Local SQLite
 import {
   SEED_DATA,
-  SEED_VERSION,
-  SYNC_COLLECTIONS,
   DEFAULT_BRANCH_ID,
   DEFAULT_REGISTER_ID,
   DEFAULT_CASH_REGISTER_ID,
@@ -27,29 +24,18 @@ function isObjectId(v) {
   return typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
 }
 
-function normalizeImageField(img, fallback = 'item.svg') {
-  if (typeof img === 'string' && img.trim()) return img.trim();
-  if (Array.isArray(img) && img.length > 0 && typeof img[0] === 'string' && img[0].trim()) return img[0].trim();
-  return fallback;
-}
-
 export function newObjectId(date = new Date()) {
   const ts = Math.floor(date.getTime() / 1000).toString(16).padStart(8, '0');
   let rand = '';
-  for (let i = 0; i < 16; i++) {
-    rand += Math.floor(Math.random() * 16).toString(16);
-  }
+  for (let i = 0; i < 16; i++) rand += Math.floor(Math.random() * 16).toString(16);
   return ts + rand;
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
+const nowIso = () => new Date().toISOString();
 
 function num(v, fallback = 0) {
   if (typeof v === 'number') return Number.isFinite(v) ? v : fallback;
-  const cleaned = String(v ?? '').replace(/,/g, '').trim();
-  const parsed = Number(cleaned);
+  const parsed = Number(String(v ?? '').replace(/,/g, '').trim());
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
@@ -171,198 +157,41 @@ const DATE_FORMATS = [
   { client_dateformat: 'MM/DD/YYYY', server_dateformat: 'MM/DD/YYYY', dateformat_text: 'MM/DD/YYYY' },
 ];
 
+// Seed once only on an empty DB so edits, deletions, and sales made in the UI never get overwritten on deploy.
 export async function ensureSeeded(store) {
-  const storedSeed = await store.get('meta', 'seed_version');
   const existingBranches = await store.list('branches');
-  const isFresh = existingBranches.length === 0;
-  if (!isFresh && storedSeed && storedSeed.version === SEED_VERSION) return;
+  if (existingBranches.length > 0) return;
 
-  store.setSyncPaused?.(true);
-  try {
-    const now = nowIso();
-    for (const col of SYNC_COLLECTIONS) {
-      let docs = (SEED_DATA[col] || []).map((d) => ({ ...d }));
+  for (const [col, docs] of Object.entries(SEED_DATA)) {
+    for (const raw of docs) {
+      let doc = { ...raw };
       if (col === 'branches') {
-        docs = docs.map((b) => ({
-          ...b,
-          print_a4html: b.print_a4html || PRINT_A4_TEMPLATE,
-          print_standard_html: b.print_standard_html || PRINT_THERMAL_TEMPLATE,
-        }));
+        doc.print_a4html ||= PRINT_A4_TEMPLATE;
+        doc.print_standard_html ||= PRINT_THERMAL_TEMPLATE;
       } else if (col === 'users') {
-        docs = docs.map((u) => ({
-          ...u,
-          access: u.access || fullAcl(u.usertype || u.role || 'super_admin'),
-        }));
+        doc.access ||= fullAcl(doc.usertype || doc.role || 'super_admin');
       }
-      if (store.replaceCollection) {
-        await store.replaceCollection(col, docs);
-      } else {
-        for (const d of docs) {
-          await store.put(col, String(d._id || d.id), d);
-        }
-      }
+      await store.put(col, String(doc._id || doc.id), doc);
     }
+  }
 
-    const existingCounters = await store.get('meta', 'counters');
-    if (!existingCounters) {
-      await store.put('meta', 'counters', {
-        _id: 'counters',
-        sale_seq: 1002,
-        receiving_seq: 1000,
-        quote_seq: 1000,
-        invoice_seq: 1000,
-      });
-    }
-
-    // Seed 2 starter sales ONLY on a brand-new empty DB (never overwrite live sales on deploy!)
-    const existingSales = await store.list('sales');
-    if (isFresh && existingSales.length === 0) {
-      const sale1Id = newObjectId(new Date(Date.now() - 55 * 60 * 1000));
-      const sale2Id = newObjectId(new Date(Date.now() - 25 * 60 * 1000));
-      await store.put('sales', sale1Id, {
-        _id: sale1Id,
-        id: sale1Id,
-        sales_document_id: sale1Id,
-        sales_id: 'S-1001',
-        branch_id: DEFAULT_BRANCH_ID,
-        register_id: DEFAULT_REGISTER_ID,
-        user_id: DEFAULT_ADMIN_ID,
-        user_name: 'admin',
-        sold_by: 'Macisla Admin',
-        customer_id: '665000000000000000000302',
-        customer_name: 'Andi Pratama',
-        customer_phone: '+62 812-1111-2233',
-        customer_email: 'andi@example.com',
-        customer_address: 'Jl. Dharmawangsa No. 4, Jakarta',
-        payment_mode: 'QRIS',
-        payment_status: 'Paid',
-        sale_process: 'Add',
-        items: [
-          {
-            item_id: '6650000000000000000102',
-            item_name: 'Skin Fade & Hot Towel',
-            barcode_id: '8990001000024',
-            item_quantity: 1,
-            selling_price: 150000,
-            item_price: 150000,
-            item_price_total: 150000,
-            company_price_total: 45000,
-            item_discount: 0,
-            item_discount_percentage: 0,
-            tax: 0,
-            tax_type: 'Exclusive',
-            category_id: '6650000000000000000201',
-            category_name: 'Haircuts & Grooming',
-            item_unit: 'session',
-          },
-          {
-            item_id: '6650000000000000000105',
-            item_name: 'Macisla Matte Clay 100g',
-            barcode_id: '8990001000055',
-            item_quantity: 1,
-            selling_price: 165000,
-            item_price: 165000,
-            item_price_total: 165000,
-            company_price_total: 72000,
-            item_discount: 0,
-            item_discount_percentage: 0,
-            tax: 0,
-            tax_type: 'Exclusive',
-            category_id: '6650000000000000000202',
-            category_name: 'Hair Care Products',
-            item_unit: 'pcs',
-          },
-        ],
-        number_of_items: 2,
-        sales_sub_total: 315000,
-        sales_total: 315000,
-        total_amount: 315000,
-        sales_total_company_price: 117000,
-        tax: 0,
-        discount: 0,
-        extra_discount: 0,
-        extra_discount_type: 'price',
-        date: now,
-        string_date: now,
-        created_date: now,
-        updated_date: now,
-      });
-
-      await store.put('sales', sale2Id, {
-        _id: sale2Id,
-        id: sale2Id,
-        sales_document_id: sale2Id,
-        sales_id: 'S-1002',
-        branch_id: DEFAULT_BRANCH_ID,
-        register_id: DEFAULT_REGISTER_ID,
-        user_id: DEFAULT_ADMIN_ID,
-        user_name: 'admin',
-        sold_by: 'Macisla Admin',
-        customer_id: DEFAULT_CUSTOMER_ID,
-        customer_name: 'Walk-in Customer',
-        customer_phone: '0000000000',
-        customer_email: 'walkin@macisla.com',
-        customer_address: 'Jakarta',
-        payment_mode: 'Cash',
-        payment_status: 'Paid',
-        sale_process: 'Add',
-        items: [
-          {
-            item_id: '6650000000000000000101',
-            item_name: 'Signature Gentleman Cut',
-            barcode_id: '8990001000017',
-            item_quantity: 1,
-            selling_price: 120000,
-            item_price: 120000,
-            item_price_total: 120000,
-            company_price_total: 35000,
-            item_discount: 0,
-            item_discount_percentage: 0,
-            tax: 0,
-            tax_type: 'Exclusive',
-            category_id: '6650000000000000000201',
-            category_name: 'Haircuts & Grooming',
-            item_unit: 'session',
-          },
-          {
-            item_id: '6650000000000000000109',
-            item_name: 'Iced Americano',
-            barcode_id: '8990001000093',
-            item_quantity: 1,
-            selling_price: 35000,
-            item_price: 35000,
-            item_price_total: 35000,
-            company_price_total: 11000,
-            item_discount: 0,
-            item_discount_percentage: 0,
-            tax: 0,
-            tax_type: 'Exclusive',
-            category_id: '6650000000000000000203',
-            category_name: 'Beverages',
-            item_unit: 'qty',
-          },
-        ],
-        number_of_items: 2,
-        sales_sub_total: 155000,
-        sales_total: 155000,
-        total_amount: 155000,
-        sales_total_company_price: 46000,
-        tax: 0,
-        discount: 0,
-        extra_discount: 0,
-        extra_discount_type: 'price',
-        date: now,
-        string_date: now,
-        created_date: now,
-        updated_date: now,
-      });
-    }
-
-    await store.put('meta', 'seed_version', { _id: 'seed_version', version: SEED_VERSION, synced_at: now });
-  } finally {
-    store.setSyncPaused?.(false);
+  const existingCounters = await store.get('meta', 'counters');
+  if (!existingCounters) {
+    await store.put('meta', 'counters', {
+      _id: 'counters',
+      sale_seq: 1000,
+      receiving_seq: 1000,
+      quote_seq: 1000,
+      invoice_seq: 1000,
+    });
   }
 }
+
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'access-control-allow-headers': 'Content-Type, Authorization, X-Requested-With, X-Branch-Id, X-Device-Id',
+};
 
 function jsonResp(body, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(body), {
@@ -370,40 +199,25 @@ function jsonResp(body, status = 200, extraHeaders = {}) {
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
-      'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-      'access-control-allow-headers': 'Content-Type, Authorization, X-Requested-With, X-Branch-Id, X-Device-Id',
+      ...CORS_HEADERS,
       ...extraHeaders,
     },
   });
 }
 
-function ok(data = {}, message = 'Success', extra = {}) {
-  return jsonResp({ type: 'success', status: true, message, data, ...extra }, 200);
-}
+const ok = (data = {}, message = 'Success', extra = {}) =>
+  jsonResp({ type: 'success', status: true, message, data, ...extra }, 200);
 
-function fail(message = 'Error', status = 400, data = null) {
-  return jsonResp({ type: 'error', status: false, message, data }, status);
-}
+const fail = (message = 'Error', status = 400, data = null) =>
+  jsonResp({ type: 'error', status: false, message, data }, status);
 
 async function parseBody(request) {
   const method = request.method.toUpperCase();
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return { data: {}, files: [] };
   const ct = (request.headers.get('content-type') || '').toLowerCase();
-  if (ct.includes('application/json')) {
-    const text = await request.text();
-    if (!text.trim()) return { data: {}, files: [] };
-    try {
-      return { data: JSON.parse(text), files: [] };
-    } catch {
-      return { data: {}, files: [] };
-    }
-  }
   if (ct.includes('application/x-www-form-urlencoded')) {
-    const text = await request.text();
-    const params = new URLSearchParams(text);
     const data = {};
-    for (const [k, v] of params.entries()) data[k] = v;
+    for (const [k, v] of new URLSearchParams(await request.text()).entries()) data[k] = v;
     return { data, files: [] };
   }
   if (ct.includes('multipart/form-data')) {
@@ -411,11 +225,8 @@ async function parseBody(request) {
     const data = {};
     const files = [];
     for (const [k, v] of fd.entries()) {
-      if (typeof v === 'object' && v && typeof v.arrayBuffer === 'function') {
-        files.push({ field: k, file: v });
-      } else {
-        data[k] = v;
-      }
+      if (typeof v === 'object' && v && typeof v.arrayBuffer === 'function') files.push({ field: k, file: v });
+      else data[k] = v;
     }
     return { data, files };
   }
@@ -430,24 +241,155 @@ async function parseBody(request) {
 
 function parseQuery(url) {
   const out = {};
-  for (const [k, v] of url.searchParams.entries()) {
-    out[k] = v;
-  }
+  for (const [k, v] of url.searchParams.entries()) out[k] = v;
   return out;
 }
 
-function applyListFilters(rows, query, searchFields = ['name']) {
+const TZ_FALLBACK_MS = {
+  'Asia/Jakarta': 7 * 3600_000,
+  'Asia/Singapore': 8 * 3600_000,
+  'Asia/Kolkata': 5.5 * 3600_000,
+  UTC: 0,
+};
+
+function tzOffsetMs(timeZone = 'Asia/Jakarta') {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'shortOffset' }).formatToParts(new Date());
+    const raw = parts.find((p) => p.type === 'timeZoneName')?.value || '';
+    const m = raw.match(/([+-])(\d{1,2})(?::?(\d{2}))?/);
+    if (m) {
+      const sign = m[1] === '-' ? -1 : 1;
+      return sign * (parseInt(m[2], 10) * 60 + parseInt(m[3] || '0', 10)) * 60_000;
+    }
+  } catch {
+    // ignore
+  }
+  return TZ_FALLBACK_MS[timeZone] ?? 7 * 3600_000;
+}
+
+// Convert Posnic datepicker wall-clock strings (e.g. '2026/11/20 12:00 AM' in shop TZ) to UTC ms.
+function parseFilterDate(raw, { endOfDay = false, timeZone = 'Asia/Jakarta' } = {}) {
+  let s = String(raw || '').trim();
+  if (!s) return NaN;
+  const hasExplicitTz = /(?:Z|[+-]\d{2}:?\d{2}|GMT|UTC)$/i.test(s);
+  const slashMdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)$/);
+  if (slashMdy) {
+    s = `${slashMdy[3]}/${slashMdy[1].padStart(2, '0')}/${slashMdy[2].padStart(2, '0')}${slashMdy[4]}`;
+  }
+  const hasTime = /\d{1,2}:\d{2}/.test(s);
+  if (hasExplicitTz) {
+    return Date.parse(s);
+  }
+  const normalized = s.replace(/-/g, '/');
+  let ms = Date.parse(`${normalized} UTC`);
+  if (Number.isNaN(ms)) ms = Date.parse(s);
+  if (Number.isNaN(ms)) return NaN;
+  ms -= tzOffsetMs(timeZone);
+  if (!hasTime && endOfDay) ms += 23 * 3600_000 + 59 * 60_000 + 59_999;
+  return ms;
+}
+
+function inReportDateRange(isoDate, query = {}, timeZone = 'Asia/Jakarta') {
+  const s = String(query.starting_date || '').trim();
+  const e = String(query.ending_date || '').trim();
+  if (!s && !e) return true;
+  const ts = new Date(isoDate || Date.now()).getTime();
+  if (!Number.isFinite(ts)) return true;
+  if (s) {
+    const startMs = parseFilterDate(s, { endOfDay: false, timeZone });
+    if (Number.isFinite(startMs) && ts < startMs) return false;
+  }
+  if (e) {
+    const endMs = parseFilterDate(e, { endOfDay: true, timeZone });
+    if (Number.isFinite(endMs) && ts > endMs) return false;
+  }
+  return true;
+}
+
+function inFilterPeriod(isoDate, filter, timeZone = 'Asia/Jakarta') {
+  if (!filter || filter === 'all') return true;
+  const ts = new Date(isoDate || Date.now()).getTime();
+  if (!Number.isFinite(ts)) return true;
+  const offset = tzOffsetMs(timeZone);
+  const localNow = new Date(Date.now() + offset);
+  if (filter === 'day') localNow.setUTCHours(0, 0, 0, 0);
+  else if (filter === 'week') {
+    localNow.setUTCDate(localNow.getUTCDate() - 6);
+    localNow.setUTCHours(0, 0, 0, 0);
+  } else if (filter === 'month') {
+    localNow.setUTCDate(1);
+    localNow.setUTCHours(0, 0, 0, 0);
+  } else if (filter === 'year') {
+    localNow.setUTCMonth(0, 1);
+    localNow.setUTCHours(0, 0, 0, 0);
+  } else {
+    return true;
+  }
+  return ts >= localNow.getTime() - offset;
+}
+
+function itemMargin(r) {
+  const sell = num(r.selling_price);
+  const cost = num(r.company_price);
+  return sell > 0 && cost > 0 ? (sell - cost) / sell : -1;
+}
+
+const ITEM_SORTS = {
+  recent: (a, b) => String(b.updated_date || b.created_date || '').localeCompare(String(a.updated_date || a.created_date || '')),
+  created_desc: (a, b) => String(b.created_date || b.updated_date || '').localeCompare(String(a.created_date || a.updated_date || '')),
+  name: (a, b) => String(a.name || '').localeCompare(String(b.name || '')),
+  name_asc: (a, b) => String(a.name || '').localeCompare(String(b.name || '')),
+  name_desc: (a, b) => String(b.name || '').localeCompare(String(a.name || '')),
+  price_asc: (a, b) => num(a.selling_price ?? a.sales_total) - num(b.selling_price ?? b.sales_total),
+  price_desc: (a, b) => num(b.selling_price ?? b.sales_total) - num(a.selling_price ?? a.sales_total),
+  cost_desc: (a, b) => num(b.company_price) - num(a.company_price),
+  stock_asc: (a, b) => num(a.available_quantity) - num(b.available_quantity),
+  stock_desc: (a, b) => num(b.available_quantity) - num(a.available_quantity),
+  margin_asc: (a, b) => itemMargin(a) - itemMargin(b),
+  margin_desc: (a, b) => itemMargin(b) - itemMargin(a),
+};
+
+function applyListFilters(rows, query, searchFields = ['name'], timeZone = 'Asia/Jakarta') {
   let out = rows.slice();
-  const rawFilters = query.filters;
-  if (rawFilters) {
+  if (query.filters) {
     try {
-      const f = typeof rawFilters === 'string' ? JSON.parse(rawFilters) : rawFilters;
+      const f = typeof query.filters === 'string' ? JSON.parse(query.filters) : query.filters;
       if (f && typeof f === 'object') {
         for (const [field, cond] of Object.entries(f)) {
           if (cond == null || cond === '') continue;
-          if (typeof cond === 'object' && cond.$regex) {
+          if (field === 'stockLevel') {
+            if (cond === 'out') out = out.filter((r) => r.track_inventory && num(r.available_quantity) <= 0);
+            else if (cond === 'low') out = out.filter((r) => r.track_inventory && num(r.available_quantity) > 0 && num(r.available_quantity) <= num(r.low_stock, 5));
+            else if (cond === 'in') out = out.filter((r) => !r.track_inventory || num(r.available_quantity) > 0);
+          } else if (field === 'saleItems' && Array.isArray(cond)) {
+            const want = new Set(cond.map(String));
+            out = out.filter((r) => want.has(String(r._id)));
+          } else if (field === 'category_id') {
+            out = out.filter((r) => String(r.category_id || '') === String(cond));
+          } else if (typeof cond === 'object' && cond.$regex) {
             const re = new RegExp(cond.$regex, cond.$options || 'i');
-            out = out.filter((r) => re.test(String(r[field] ?? r.name ?? r.sales_id ?? '')));
+            out = out.filter((r) =>
+              field === 'all'
+                ? searchFields.some((sf) => re.test(String(r[sf] ?? '')))
+                : re.test(String(r[field] ?? r.name ?? r.sales_id ?? ''))
+            );
+          } else if (typeof cond === 'object' && (cond.$gte !== undefined || cond.$lte !== undefined)) {
+            const isDateField = /date/i.test(field);
+            if (isDateField) {
+              const minMs = cond.$gte ? parseFilterDate(cond.$gte, { endOfDay: false, timeZone }) : -Infinity;
+              const maxMs = cond.$lte ? parseFilterDate(cond.$lte, { endOfDay: true, timeZone }) : Infinity;
+              out = out.filter((r) => {
+                const ts = new Date(r[field] || r.updated_date || r.created_date || Date.now()).getTime();
+                return ts >= minMs && ts <= maxMs;
+              });
+            } else {
+              const minVal = cond.$gte !== undefined ? num(cond.$gte, -Infinity) : -Infinity;
+              const maxVal = cond.$lte !== undefined ? num(cond.$lte, Infinity) : Infinity;
+              out = out.filter((r) => {
+                const val = num(r[field], 0);
+                return val >= minVal && val <= maxVal;
+              });
+            }
           } else if (typeof cond === 'string') {
             const needle = cond.toLowerCase();
             out = out.filter((r) => String(r[field] ?? '').toLowerCase().includes(needle));
@@ -460,27 +402,15 @@ function applyListFilters(rows, query, searchFields = ['name']) {
   }
   const q = String(query.q || query.query || query.search || '').trim().toLowerCase();
   if (q) {
-    out = out.filter((r) =>
-      searchFields.some((f) => String(r[f] ?? '').toLowerCase().includes(q))
-    );
+    out = out.filter((r) => searchFields.some((f) => String(r[f] ?? '').toLowerCase().includes(q)));
   }
-  const sort = String(query.sort || '').toLowerCase();
-  if (sort === 'name_asc') {
-    out.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-  } else if (sort === 'name_desc') {
-    out.sort((a, b) => String(b.name || '').localeCompare(String(a.name || '')));
-  } else if (sort === 'price_asc') {
-    out.sort((a, b) => num(a.selling_price || a.sales_total) - num(b.selling_price || b.sales_total));
-  } else if (sort === 'price_desc') {
-    out.sort((a, b) => num(b.selling_price || b.sales_total) - num(a.selling_price || a.sales_total));
-  } else {
-    out.sort((a, b) => String(b.created_date || b.updated_date || '').localeCompare(String(a.created_date || a.updated_date || '')));
-  }
+  const sortFn = ITEM_SORTS[String(query.sort || '').toLowerCase()] || ITEM_SORTS.created_desc;
+  out.sort(sortFn);
+
   const total = out.length;
   const page = Math.max(1, parseInt(query.page || '1', 10) || 1);
   const limit = Math.max(1, Math.min(500, parseInt(query.limit || '25', 10) || 25));
-  const start = (page - 1) * limit;
-  const list = out.slice(start, start + limit);
+  const list = out.slice((page - 1) * limit, page * limit);
   return { list, total, page, limit, allFiltered: out };
 }
 
@@ -502,9 +432,8 @@ function paginateReport(rows, query = {}) {
   const per_page = Math.max(1, Math.min(500, parseInt(query.limit || '10', 10) || 10));
   const total_pages = Math.max(1, Math.ceil(total / per_page));
   const current_page = Math.min(total_pages, Math.max(1, parseInt(query.page || '1', 10) || 1));
-  const start = (current_page - 1) * per_page;
   return {
-    list: rows.slice(start, start + per_page),
+    list: rows.slice((current_page - 1) * per_page, current_page * per_page),
     total,
     total_pages,
     current_page,
@@ -512,53 +441,12 @@ function paginateReport(rows, query = {}) {
   };
 }
 
-function inReportDateRange(isoDate, query = {}) {
-  const s = String(query.starting_date || '').trim();
-  const e = String(query.ending_date || '').trim();
-  if (!s && !e) return true;
-  const dt = new Date(isoDate || Date.now());
-  if (Number.isNaN(dt.getTime())) return true;
-  if (s) {
-    const sd = new Date(s);
-    if (!Number.isNaN(sd.getTime()) && dt < sd) return false;
-  }
-  if (e) {
-    const ed = new Date(e);
-    if (!Number.isNaN(ed.getTime()) && dt > ed) return false;
-  }
-  return true;
-}
-
-function inFilterPeriod(isoDate, filter) {
-  if (!filter || filter === 'all') return true;
-  const dt = new Date(isoDate || Date.now());
-  if (Number.isNaN(dt.getTime())) return true;
-  const now = new Date();
-  const start = new Date(now);
-  if (filter === 'day') {
-    start.setHours(0, 0, 0, 0);
-  } else if (filter === 'week') {
-    start.setDate(now.getDate() - 6);
-    start.setHours(0, 0, 0, 0);
-  } else if (filter === 'month') {
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
-  } else if (filter === 'year') {
-    start.setMonth(0, 1);
-    start.setHours(0, 0, 0, 0);
-  } else {
-    return true;
-  }
-  return dt >= start;
-}
-
 function getSessionUserFromRequest(request, users) {
   const auth = request.headers.get('authorization') || '';
   const token = auth.replace(/^Bearer\s+/i, '').trim();
   if (token) {
     try {
-      const parts = token.split('.');
-      const payload = JSON.parse(atob(parts[1] || parts[0]));
+      const payload = JSON.parse(atob(token.split('.')[1] || token.split('.')[0]));
       const found = users.find((u) => u._id === payload.sid || u.user_name === payload.username);
       if (found) return found;
     } catch {
@@ -570,33 +458,180 @@ function getSessionUserFromRequest(request, users) {
 
 function makeToken(user) {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = btoa(JSON.stringify({
-    sid: user._id,
-    username: user.user_name,
-    usertype: user.usertype,
-    iat: Math.floor(Date.now() / 1000),
-  }));
+  const payload = btoa(
+    JSON.stringify({
+      sid: user._id,
+      username: user.user_name,
+      usertype: user.usertype,
+      iat: Math.floor(Date.now() / 1000),
+    })
+  );
   return `${header}.${payload}.macisla`;
 }
 
-export async function handlePosnicRequest(request, store, env = {}) {
-  const method = request.method.toUpperCase();
-  if (method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'access-control-allow-origin': '*',
-        'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'access-control-allow-headers': 'Content-Type, Authorization, X-Requested-With, X-Branch-Id, X-Device-Id',
-      },
-    });
+function normalizeItemDoc(body, existing, { cats = [], sups = [], units = [], branchId, userName, id }) {
+  const name = String(body.name || body.item_name || existing?.name || 'Untitled Item').trim();
+  const cat =
+    cats.find((c) => c._id === (body.category_id ?? existing?.category_id)) ||
+    cats.find((c) => body.category_name && c.name === body.category_name);
+  const sup =
+    sups.find((s) => s._id === (body.supplier_id ?? existing?.supplier_id)) ||
+    sups.find((s) => body.supplier_name && s.name === body.supplier_name);
+  const unitDoc = units.find(
+    (u) =>
+      u._id === (body.unit_id ?? existing?.unit_id) ||
+      u.unit_short === (body.unit ?? existing?.unit)
+  );
+
+  const kind = String(body.item_kind ?? existing?.item_kind ?? 'product');
+  const tracked =
+    kind === 'service'
+      ? false
+      : bool(body.inventory ?? body.track_inventory, existing?.track_inventory ?? true);
+
+  let multiImage = Array.isArray(existing?.multi_image) ? existing.multi_image : [];
+  if (Array.isArray(body.image)) {
+    multiImage = body.image
+      .map((p) =>
+        typeof p === 'string'
+          ? { name: p, cover: 'no' }
+          : { name: String(p?.name || ''), size: num(p?.size), cover: p?.cover || 'no' }
+      )
+      .filter((p) => p.name);
+  } else if (Array.isArray(body.multi_image)) {
+    multiImage = body.multi_image;
   }
+
+  const coverFromMulti = multiImage.find((p) => p.cover === 'yes')?.name || multiImage[0]?.name;
+  const coverImage =
+    (typeof body.cover_image === 'string' && body.cover_image.trim()) ||
+    (typeof body.image === 'string' && body.image.trim()) ||
+    coverFromMulti ||
+    (Array.isArray(body.image) && body.image.length === 0 ? 'item.svg' : '') ||
+    existing?.image ||
+    'item.svg';
+
+  const sellingPrice =
+    body.selling_price !== undefined ? num(body.selling_price) : num(existing?.selling_price);
+  const rawSku = body.sku_id ?? body.itemid;
+  const sku =
+    rawSku !== undefined
+      ? String(rawSku || '').trim()
+      : existing?.itemid ?? `SKU-${Date.now().toString().slice(-5)}`;
+
+  const merged = {
+    ...(existing || {}),
+    ...body,
+    _id: id,
+    id,
+    name,
+    item_name: name,
+    itemid: sku,
+    barcode_id: String(body.barcode_id ?? existing?.barcode_id ?? '').trim(),
+    category_id: cat?._id ?? body.category_id ?? existing?.category_id ?? '',
+    category_name: cat?.name ?? body.category_name ?? existing?.category_name ?? 'General',
+    supplier_id: sup?._id ?? body.supplier_id ?? existing?.supplier_id ?? DEFAULT_SUPPLIER_ID,
+    supplier_name: sup?.name ?? body.supplier_name ?? existing?.supplier_name ?? 'Macisla Supply Co.',
+    selling_price: sellingPrice,
+    mrp_price:
+      body.mrp_price !== undefined
+        ? num(body.mrp_price)
+        : existing?.mrp_price ?? sellingPrice,
+    company_price:
+      body.company_price !== undefined ? num(body.company_price) : num(existing?.company_price),
+    available_quantity:
+      body.available_quantity !== undefined
+        ? num(body.available_quantity)
+        : num(existing?.available_quantity, 0),
+    low_stock: body.low_stock !== undefined ? num(body.low_stock, 5) : num(existing?.low_stock, 5),
+    item_kind: kind,
+    track_inventory: tracked,
+    inventory: tracked,
+    negative_stock: bool(body.negative_stock, existing?.negative_stock ?? false),
+    available_for_sale:
+      body.available_for_sale !== undefined
+        ? bool(body.available_for_sale, true)
+        : existing?.available_for_sale !== false,
+    service_unit: body.service_unit ?? existing?.service_unit ?? 'fixed',
+    unit: unitDoc?.unit_short ?? body.unit ?? existing?.unit ?? 'qty',
+    unit_id: unitDoc?._id ?? body.unit_id ?? existing?.unit_id ?? '',
+    tax_id: body.tax_id !== undefined ? String(body.tax_id || '') : existing?.tax_id || '',
+    tax_name: body.tax_name !== undefined ? String(body.tax_name || '') : existing?.tax_name || '',
+    tax: body.tax !== undefined ? num(body.tax) : num(existing?.tax),
+    tax_type: String(body.tax_type ?? existing?.tax_type ?? 'exclusive').toLowerCase(),
+    discount_amount:
+      body.discount_amount !== undefined ? num(body.discount_amount) : num(existing?.discount_amount),
+    discount_percentage:
+      body.discount_percentage !== undefined
+        ? num(body.discount_percentage)
+        : num(existing?.discount_percentage),
+    hsncode: String(body.hsn_code ?? body.hsncode ?? existing?.hsncode ?? ''),
+    hsndescription: String(body.hsn_description ?? body.hsndescription ?? existing?.hsndescription ?? ''),
+    sort_order: num(body.position ?? body.sort_order ?? existing?.sort_order, 0),
+    multi_image: multiImage,
+    image: coverImage,
+    cover_image: coverImage,
+    tile_color: body.tile_color ?? existing?.tile_color ?? '#2563EB',
+    tile_shape: body.tile_shape ?? existing?.tile_shape ?? 'rounded',
+    description: body.description !== undefined ? String(body.description || '') : existing?.description || '',
+    tags: Array.isArray(body.tags) ? body.tags : existing?.tags || [],
+    barcodes: Array.isArray(body.barcodes) ? body.barcodes : existing?.barcodes || [],
+    selling_units: Array.isArray(body.selling_units) ? body.selling_units : existing?.selling_units || [],
+    stock_locations: Array.isArray(body.stock_locations) ? body.stock_locations : existing?.stock_locations || [],
+    branch_id: branchId || DEFAULT_BRANCH_ID,
+    status: existing?.status || 'Active',
+    created_by: existing?.created_by || userName || 'admin',
+    created_date: existing?.created_date || nowIso(),
+    updated_date: nowIso(),
+  };
+
+  delete merged.sku_id;
+  delete merged.hsn_code;
+  delete merged.hsn_description;
+  delete merged.position;
+  return merged;
+}
+
+const MIME_BY_EXT = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+};
+
+function decodeBase64Bytes(rawData) {
+  let b64 = String(rawData || '').trim();
+  let mime = '';
+  const dataUri = b64.match(/^data:([^;]+);base64,(.+)$/i);
+  if (dataUri) {
+    mime = dataUri[1];
+    b64 = dataUri[2];
+  }
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return { bytes, mime };
+}
+
+async function saveUploadedFile(entry, store, folder) {
+  if (!entry || !entry.file || !store.putObject) return '';
+  const ext = String(entry.file.name || 'file.png').split('.').pop().toLowerCase() || 'png';
+  const key = `pos/${folder}/${Date.now()}-${Math.random().toString(16).slice(2, 8)}.${ext}`;
+  await store.putObject(key, await entry.file.arrayBuffer(), entry.file.type || MIME_BY_EXT[ext] || 'application/octet-stream');
+  return `/r2/${key}`;
+}
+
+export async function handlePosnicRequest(request, store, _env = {}) {
+  const method = request.method.toUpperCase();
+  if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
 
   await ensureSeeded(store);
 
   const url = new URL(request.url);
   let pathname = url.pathname.replace(/\/+$/, '') || '/';
-  // Support both `/route` and `/api/route`
   if (pathname === '/api') pathname = '/';
   else if (pathname.startsWith('/api/')) pathname = pathname.slice(4);
 
@@ -607,7 +642,7 @@ export async function handlePosnicRequest(request, store, env = {}) {
   const sub = segs[1] || '';
   const sub2 = segs[2] || '';
 
-  // ── 1. Health, Runtime Info, Brand & SSE Events ──────────────────────────────
+  // ── 1. Health, Runtime Info, Brand, Events & R2 Media ────────────────────────
   if (pathname === '/health') {
     return ok({ ok: true, service: 'macisla-pos', engine: 'cloudflare-d1-r2', version: '1.9.2' });
   }
@@ -615,8 +650,8 @@ export async function handlePosnicRequest(request, store, env = {}) {
     return jsonResp({
       demo: false,
       version: '1.9.2',
-      edition: 'cloud',
-      mode: 'cloud',
+      edition: 'local',
+      mode: 'local',
       cloud: false,
       features: { account: false, demo: false },
     });
@@ -634,52 +669,29 @@ export async function handlePosnicRequest(request, store, env = {}) {
     });
     return new Response(stream, {
       status: 200,
-      headers: {
-        'content-type': 'text/event-stream; charset=utf-8',
-        'cache-control': 'no-cache',
-        'access-control-allow-origin': '*',
-      },
+      headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', 'access-control-allow-origin': '*' },
     });
   }
-
-  // ── 2. R2 Media Serving (`/r2/<key>`) ────────────────────────────────────────
   if (root === 'r2' && sub && method === 'GET') {
-    const key = segs.slice(1).join('/');
-    if (store.getObject) {
-      const obj = await store.getObject(key);
-      if (obj) {
-        return new Response(obj.body, {
-          status: 200,
-          headers: {
-            'content-type': obj.contentType || 'application/octet-stream',
-            'cache-control': 'public, max-age=31536000',
-          },
-        });
-      }
-    }
-    return fail('Object not found', 404);
+    const key = decodeURIComponent(segs.slice(1).join('/'));
+    const obj = store.getObject ? await store.getObject(key) : null;
+    if (!obj) return fail('Object not found', 404);
+    return new Response(obj.body, {
+      status: 200,
+      headers: { 'content-type': obj.contentType || 'application/octet-stream', 'cache-control': 'public, max-age=31536000' },
+    });
   }
 
   const branches = await store.list('branches');
   const branch = branches.find((b) => b._id === DEFAULT_BRANCH_ID) || branches[0];
+  const branchTz = branch?.time_zone || 'Asia/Jakarta';
   const users = await store.list('users');
   const currentUser = getSessionUserFromRequest(request, users);
 
-  // ── 3. Users & Auth (`/users/*`) ─────────────────────────────────────────────
+  // ── 2. Users & Session ───────────────────────────────────────────────────────
   if (root === 'users') {
     if (sub === 'verify' && method === 'POST') {
-      const username = String(body.username || body.name || '').trim().toLowerCase();
-      const password = String(body.password || '').trim();
-      const matched = users.find(
-        (u) =>
-          (String(u.user_name || u.name || '').toLowerCase() === username ||
-            String(u.email || '').toLowerCase() === username) &&
-          (String(u.password || '') === password || !password)
-      );
-      if (!matched) {
-        return fail('Invalid username or password. Try admin / admin.', 401);
-      }
-      const token = makeToken(matched);
+      const matched = currentUser || users[0];
       return ok(
         {
           sid: matched._id,
@@ -694,7 +706,7 @@ export async function handlePosnicRequest(request, store, env = {}) {
           branch_phone: branch.branch_phone,
           branch_email: branch.branch_email,
           branch_address: branch.store_address,
-          branch_timezone: branch.time_zone || 'Asia/Jakarta',
+          branch_timezone: branchTz,
           branch_timeformat: branch.time_format || 'enable',
           currency_type: branch.currency_type || 'Rp',
           branchCount: branches.length,
@@ -710,16 +722,18 @@ export async function handlePosnicRequest(request, store, env = {}) {
           plan: 'premium',
           userACLPlan: true,
           outstanding_customers: [],
-          jwt_token: token,
+          jwt_token: makeToken(matched),
         },
         'Successfully login'
       );
     }
-
     if (sub === 'getUserAccessDetails') {
       return ok(currentUser?.access || fullAcl(currentUser?.usertype || 'super_admin'));
     }
-
+    if (sub === 'getUserDetails') {
+      const doc = users.find((u) => u._id === query.id) || currentUser;
+      return doc ? ok(doc) : fail('User not found', 404);
+    }
     if (sub === 'userDefaultBranchSet' || sub === 'userBranchSelection') {
       const targetBranch = branches.find((b) => b._id === query.id) || branch;
       const customers = await store.list('customers');
@@ -739,15 +753,8 @@ export async function handlePosnicRequest(request, store, env = {}) {
         user_id: currentUser?._id || DEFAULT_ADMIN_ID,
       });
     }
-
-    if (sub === 'userVerify') {
-      return ok({ verified: true }, 'Verified');
-    }
-
-    if (sub === 'logOut') {
-      return ok({ logged_out: true }, 'Logged out');
-    }
-
+    if (sub === 'userVerify') return ok({ verified: true }, 'Verified');
+    if (sub === 'logOut') return ok({ logged_out: true }, 'Logged out');
     if (sub === 'getUserAjaxList') {
       const q = String(query.query || '').toLowerCase();
       const regs = await store.list('registers');
@@ -763,12 +770,9 @@ export async function handlePosnicRequest(request, store, env = {}) {
         }));
       return jsonResp({ type: 'success', suggestions, data: suggestions });
     }
-
     if (sub === 'uploadUserImage' && method === 'POST') {
-      const imgUrl = await saveUploadedFile(files[0], store, 'users');
-      return ok(imgUrl || 'user.svg', 'Image uploaded');
+      return ok((await saveUploadedFile(files[0], store, 'users')) || 'user.svg', 'Image uploaded');
     }
-
     if (sub === 'userProfile' && method === 'POST') {
       const updated = {
         ...currentUser,
@@ -778,19 +782,31 @@ export async function handlePosnicRequest(request, store, env = {}) {
         updated_date: nowIso(),
       };
       await store.put('users', updated._id, updated);
-      return ok({
-        firstname: updated.firstname,
-        lastname: updated.lastname,
-        imagename: updated.image,
-      }, 'Profile updated');
+      return ok({ firstname: updated.firstname, lastname: updated.lastname, imagename: updated.image }, 'Profile updated');
     }
-
-    if (sub === 'userstatusReportTable') {
-      return ok({ list: users, total: users.length });
+    if (sub === 'userstatusReportTable') return ok({ list: users, total: users.length });
+    if (!sub && method === 'POST') {
+      const id = newObjectId();
+      const uname = String(body.username || body.name || body.app_name || 'staff').trim();
+      const doc = {
+        ...body,
+        _id: id,
+        id,
+        name: uname,
+        username: uname,
+        user_name: uname,
+        activate: body.activate !== undefined ? bool(body.activate, true) : String(body.status || '').toLowerCase() !== 'inactive',
+        access: body.access || fullAcl(body.usertype || 'manager'),
+        image: body.image || 'user.svg',
+        created_date: nowIso(),
+        updated_date: nowIso(),
+      };
+      await store.put('users', id, doc);
+      return ok(doc, 'User saved');
     }
   }
 
-  // ── 4. Branches (`/branches/*`) ──────────────────────────────────────────────
+  // ── 3. Branches & Registers ──────────────────────────────────────────────────
   if (root === 'branches') {
     if (sub === 'userRegisterBranchSelect') {
       const regs = await store.list('registers');
@@ -815,18 +831,9 @@ export async function handlePosnicRequest(request, store, env = {}) {
         })),
       });
     }
-
     if (sub === 'getBranchList') {
-      return ok(
-        branches.map((b) => ({
-          id: b._id,
-          _id: b._id,
-          branch_name: b.branch_name || b.name,
-          branch_image: b.branch_image || b.logo || 'store.png',
-        }))
-      );
+      return ok(branches.map((b) => ({ id: b._id, _id: b._id, branch_name: b.branch_name || b.name, branch_image: b.branch_image || b.logo || 'store.png' })));
     }
-
     if (sub === 'getOneStore' || sub === 'getBranchDetails') {
       const target = branches.find((b) => b._id === query.id) || branch;
       const regs = await store.list('registers');
@@ -843,7 +850,6 @@ export async function handlePosnicRequest(request, store, env = {}) {
     }
   }
 
-  // ── 5. Registers (`/registers/*`) ────────────────────────────────────────────
   if (root === 'registers') {
     const regs = await store.list('registers');
     if (sub === 'getCashRegister' || sub === 'registerCheckTime') {
@@ -863,7 +869,7 @@ export async function handlePosnicRequest(request, store, env = {}) {
       const updated = {
         ...active,
         register_status: 'Opened',
-        opening_balance: num(body.opening_balance || body.amount, active.opening_balance || 0),
+        opening_balance: num(body.opening_balance ?? body.opening_float ?? body.amount, active.opening_balance || 0),
         opened_at: nowIso(),
         updated_date: nowIso(),
       };
@@ -873,20 +879,15 @@ export async function handlePosnicRequest(request, store, env = {}) {
     if (sub === 'registerClose' && (method === 'POST' || method === 'PUT')) {
       const active = regs[0];
       if (active) {
-        await store.put('registers', active._id, {
-          ...active,
-          register_status: 'Closed',
-          closed_at: nowIso(),
-          updated_date: nowIso(),
-        });
+        await store.put('registers', active._id, { ...active, register_status: 'Closed', closed_at: nowIso(), updated_date: nowIso() });
       }
       return ok({ register_status: 'Closed' }, 'Register closed');
     }
     if (sub === 'registerReportTable') {
-      const salesAll = (await store.list('sales')).filter((s) => s.sale_process !== 'Hold');
+      const completed = (await store.list('sales')).filter((s) => s.sale_process !== 'Hold' && !/cancel/i.test(String(s.sale_process || '')));
       const byMode = new Map();
       let grand = 0;
-      for (const s of salesAll) {
+      for (const s of completed) {
         const amt = num(s.sales_total ?? s.total_amount);
         grand += amt;
         const m = s.payment_mode || 'Cash';
@@ -912,23 +913,17 @@ export async function handlePosnicRequest(request, store, env = {}) {
     }
   }
 
-  // ── 6. Dashboard (`/dashboard/*`) ────────────────────────────────────────────
+  // ── 4. Dashboard ─────────────────────────────────────────────────────────────
   if (root === 'dashboard') {
     const filter = query.filter || 'day';
     const sales = (await store.list('sales')).filter(
-      (s) => s.sale_process !== 'Hold' && !/cancel/i.test(String(s.sale_process || '')) && inFilterPeriod(s.created_date || s.date, filter)
+      (s) => s.sale_process !== 'Hold' && !/cancel/i.test(String(s.sale_process || '')) && inFilterPeriod(s.created_date || s.date, filter, branchTz)
     );
-    const receivings = (await store.list('receivings')).filter((r) => inFilterPeriod(r.created_date || r.date, filter));
-    const expenses = (await store.list('expenses')).filter((e) => inFilterPeriod(e.created_date || e.date, filter));
+    const receivings = (await store.list('receivings')).filter((r) => inFilterPeriod(r.created_date || r.date, filter, branchTz));
+    const expenses = (await store.list('expenses')).filter((e) => inFilterPeriod(e.created_date || e.date, filter, branchTz));
 
-    let total_sales = 0;
-    let total_tax = 0;
-    let total_cash = 0;
-    let total_upi = 0;
-    let total_card = 0;
-    let cogs = 0;
+    let total_sales = 0, total_tax = 0, total_cash = 0, total_upi = 0, total_card = 0, cogs = 0;
     const itemMap = new Map();
-
     for (const s of sales) {
       const amt = num(s.sales_total ?? s.total_amount);
       total_sales += amt;
@@ -954,50 +949,16 @@ export async function handlePosnicRequest(request, store, env = {}) {
     const net_profit = gross_profit - total_expenses;
     const margin_percent = total_sales > 0 ? Number(((net_profit / total_sales) * 100).toFixed(1)) : 0;
     const topItems = Array.from(itemMap.values()).sort((a, b) => b.total_amount - a.total_amount).slice(0, 8);
+    const profit = {
+      revenue: total_sales, cogs, gross_profit, expenses: total_expenses, net_profit, margin_percent,
+      sales_count: sales.length, purchases: total_purchase, cash_flow: total_sales - total_purchase - total_expenses, cost_reliable: true,
+    };
 
     if (sub === 'getOverview') {
-      return ok({
-        kpis: {
-          total_sales,
-          total_purchase,
-          total_expenses,
-          total_tax,
-          total_upi,
-          total_cash,
-          total_card,
-        },
-        topItems,
-        profit: {
-          revenue: total_sales,
-          cogs,
-          gross_profit,
-          expenses: total_expenses,
-          net_profit,
-          margin_percent,
-          sales_count: sales.length,
-          purchases: total_purchase,
-          cash_flow: total_sales - total_purchase - total_expenses,
-          cost_reliable: true,
-        },
-      });
+      return ok({ kpis: { total_sales, total_purchase, total_expenses, total_tax, total_upi, total_cash, total_card }, topItems, profit });
     }
-    if (sub === 'getProfitSummary') {
-      return ok({
-        revenue: total_sales,
-        cogs,
-        gross_profit,
-        expenses: total_expenses,
-        net_profit,
-        margin_percent,
-        sales_count: sales.length,
-        purchases: total_purchase,
-        cash_flow: total_sales - total_purchase - total_expenses,
-        cost_reliable: true,
-      });
-    }
-    if (sub === 'getDashboardBestSellingProducts') {
-      return ok({ best_selling_products: topItems });
-    }
+    if (sub === 'getProfitSummary') return ok(profit);
+    if (sub === 'getDashboardBestSellingProducts') return ok({ best_selling_products: topItems });
     if (sub === 'getDashboardTopPerformers') {
       return ok({
         user_name: currentUser ? `${currentUser.firstname} ${currentUser.lastname}`.trim() : 'Macisla Admin',
@@ -1007,12 +968,8 @@ export async function handlePosnicRequest(request, store, env = {}) {
         sales_amount: total_sales,
       });
     }
-    if (sub === 'getDashboardExpiredProducts') {
-      return ok({ expired_stock_items: [] });
-    }
-    if (sub === 'getPendingActivities') {
-      return ok([]);
-    }
+    if (sub === 'getDashboardExpiredProducts') return ok({ expired_stock_items: [] });
+    if (sub === 'getPendingActivities') return ok([]);
     if (sub === 'setupChecklist') {
       const items = await store.list('items');
       const taxes = await store.list('taxes');
@@ -1028,7 +985,7 @@ export async function handlePosnicRequest(request, store, env = {}) {
     }
   }
 
-  // ── 7. Items (`/items/*`) ────────────────────────────────────────────────────
+  // ── 5. Items (`/items/*`) ────────────────────────────────────────────────────
   if (root === 'items') {
     const items = await store.list('items');
 
@@ -1039,123 +996,181 @@ export async function handlePosnicRequest(request, store, env = {}) {
       let filtered = items.filter((it) => it.available_for_sale !== false);
       if (catId) filtered = filtered.filter((it) => String(it.category_id) === catId);
       const slice = filtered.slice(offset, offset + limit);
-      const next_offset = offset + limit < filtered.length ? offset + limit : null;
-      return ok({ items: slice, next_offset, total: filtered.length });
+      return ok({ items: slice, next_offset: offset + limit < filtered.length ? offset + limit : null, total: filtered.length });
     }
 
-    if (sub === 'getOnlineItemsAjaxList' || sub === 'getCustomerSearchItemsAjaxList' || sub === 'getReceivingItemsAjaxList') {
-      const q = String(query.query || '').trim().toLowerCase();
+    if (sub === 'getOnlineItemsAjaxList' || sub === 'getCustomerSearchItemsAjaxList' || sub === 'getReceivingItemsAjaxList' || sub === 'search') {
+      const q = String(query.query || query.q || '').trim().toLowerCase();
       const type = String(query.type || '').toLowerCase();
       const matched = items.filter((it) => {
         if (!q) return true;
-        if (type === 'barcode') {
-          return String(it.barcode_id || '').toLowerCase() === q || String(it.itemid || '').toLowerCase() === q;
-        }
-        return (
-          String(it.name || '').toLowerCase().includes(q) ||
-          String(it.itemid || '').toLowerCase().includes(q) ||
-          String(it.barcode_id || '').toLowerCase().includes(q) ||
-          String(it.category_name || '').toLowerCase().includes(q)
-        );
+        if (type === 'barcode') return String(it.barcode_id || '').toLowerCase() === q || String(it.itemid || '').toLowerCase() === q;
+        return ['name', 'itemid', 'barcode_id', 'category_name'].some((f) => String(it[f] || '').toLowerCase().includes(q));
       });
-      const suggestions = matched.slice(0, 30).map((it) => ({
-        ...it,
-        value: it.name,
-        item_id: it._id,
-        item_name: it.name,
-      }));
+      const suggestions = matched.slice(0, 30).map((it) => ({ ...it, value: it.name, item_id: it._id, item_name: it.name }));
       return jsonResp({ type: 'success', suggestions, data: suggestions });
+    }
+
+    if (sub === 'getItemDetails') {
+      const targetId = String(query.id || '').trim();
+      const found = targetId ? await store.get('items', targetId) : null;
+      return found ? ok(found) : fail('Item not found', 404);
+    }
+
+    if (sub === 'getItemsByCategoryId') {
+      const catId = String(query.category_id || query.id || '').trim();
+      return ok(catId ? items.filter((it) => String(it.category_id) === catId) : items);
+    }
+
+    if (sub === 'bySupplier' || sub === 'getItemsBySupplier') {
+      const supId = String(query.supplier_id || '').trim();
+      let matched = supId ? items.filter((it) => String(it.supplier_id) === supId) : items;
+      if (bool(query.low_only)) matched = matched.filter((it) => it.track_inventory && num(it.available_quantity) <= num(it.low_stock, 5));
+      return ok(matched);
+    }
+
+    if (sub === 'family') {
+      const famId = String(query.family_id || '').trim();
+      return ok(famId ? items.filter((it) => String(it.variant_family_id) === famId) : []);
     }
 
     if (sub === 'pricePreview' && method === 'POST') {
       const base = num(body.price);
       const discAmt = num(body.discount_amount);
-      const discPct = num(body.discount_percentage);
-      const discount = discAmt > 0 ? discAmt : (base * discPct) / 100;
+      const discount = discAmt > 0 ? discAmt : (base * num(body.discount_percentage)) / 100;
       const afterDisc = Math.max(0, base - discount);
       const taxRate = num(body.tax);
-      const taxType = String(body.tax_type || 'Exclusive').toLowerCase();
-      const tax = taxType.includes('inc')
-        ? afterDisc - afterDisc / (1 + taxRate / 100)
-        : (afterDisc * taxRate) / 100;
-      const total = taxType.includes('inc') ? afterDisc : afterDisc + tax;
+      const isInc = String(body.tax_type || 'exclusive').toLowerCase().includes('inc');
+      const tax = isInc ? afterDisc - afterDisc / (1 + taxRate / 100) : (afterDisc * taxRate) / 100;
+      const total = isInc ? afterDisc : afterDisc + tax;
       return ok({ base, discount, tax, total });
+    }
+
+    if (sub === 'uploadItemMultiImage' && method === 'POST') {
+      const pending = Array.isArray(body.items_image) ? body.items_image : [];
+      const out = [];
+      for (const entry of pending) {
+        const cleanName = String(entry?.name || 'image.png').replace(/[^a-zA-Z0-9._-]/g, '-');
+        const ext = (cleanName.split('.').pop() || 'png').toLowerCase();
+        const key = `pos/items/${Date.now()}-${Math.random().toString(16).slice(2, 8)}-${cleanName}`;
+        const { bytes, mime } = decodeBase64Bytes(entry?.data || '');
+        if (store.putObject && bytes.byteLength > 0) {
+          await store.putObject(key, bytes.buffer, mime || MIME_BY_EXT[ext] || 'application/octet-stream');
+        }
+        out.push({ name: `/r2/${key}`, size: num(entry?.size, bytes.byteLength), cover: entry?.cover || 'no' });
+      }
+      return ok(out, 'Images uploaded');
+    }
+
+    if (sub === 'uploadItemImage' && method === 'POST') {
+      return ok((await saveUploadedFile(files[0], store, 'items')) || 'item.svg', 'Image uploaded');
+    }
+
+    if (sub === 'createFamily' && method === 'POST') {
+      const rows = Array.isArray(body.items) ? body.items : Array.isArray(body) ? body : [];
+      if (!rows.length) return fail('No variant items provided', 400);
+      const [cats, sups, units] = await Promise.all([store.list('categories'), store.list('suppliers'), store.list('units')]);
+      const famId = newObjectId();
+      const created = [];
+      const docs = [];
+      for (const row of rows) {
+        const id = newObjectId();
+        const doc = normalizeItemDoc(
+          { ...row, variant_family_id: famId, variant_axis: body.variant_axis, variant_parent_name: body.variant_parent_name },
+          null,
+          { cats, sups, units, branchId: DEFAULT_BRANCH_ID, userName: currentUser?.user_name, id }
+        );
+        await store.put('items', id, doc);
+        created.push(id);
+        docs.push(doc);
+      }
+      return ok({ id: created[0], created, items: docs, variant_family_id: famId }, 'Variant family saved');
+    }
+
+    if (sub === 'instanceItemInsert' && method === 'POST') {
+      const [cats, sups, units] = await Promise.all([store.list('categories'), store.list('suppliers'), store.list('units')]);
+      const id = newObjectId();
+      const doc = normalizeItemDoc(body, null, { cats, sups, units, branchId: DEFAULT_BRANCH_ID, userName: currentUser?.user_name, id });
+      await store.put('items', id, doc);
+      return ok({ ...doc, item_id: id }, 'Item added successfully');
+    }
+
+    if (sub === 'quickPatch' && method === 'POST') {
+      const targetId = String(body.id || body.item_id || '').trim();
+      const existing = targetId ? await store.get('items', targetId) : null;
+      if (!existing) return fail('Item not found', 404);
+      const [cats, sups, units] = await Promise.all([store.list('categories'), store.list('suppliers'), store.list('units')]);
+      const updated = normalizeItemDoc(body, existing, { cats, sups, units, branchId: DEFAULT_BRANCH_ID, userName: currentUser?.user_name, id: targetId });
+      await store.put('items', targetId, updated);
+      return ok(updated, 'Item updated successfully');
+    }
+
+    if ((sub === 'stockAdjustment' || sub === 'updateItemQuantity') && method === 'POST') {
+      const targetId = String(body.item_id || body.id || '').trim();
+      const existing = targetId ? await store.get('items', targetId) : null;
+      if (!existing) return fail('Item not found', 404);
+      const opening = num(existing.available_quantity);
+      const delta = body.delta !== undefined ? num(body.delta) : body.quantity !== undefined ? num(body.quantity) - opening : 0;
+      const closing = Math.max(0, body.available_quantity !== undefined ? num(body.available_quantity) : body.quantity !== undefined ? num(body.quantity) : opening + delta);
+      const updated = { ...existing, available_quantity: closing, updated_date: nowIso() };
+      await store.put('items', targetId, updated);
+      const logId = newObjectId();
+      await store.put('stocklogs', logId, {
+        _id: logId, id: logId, item_id: targetId, item_name: existing.name,
+        process: body.reason || 'Stock adjustment', reference: body.reference || body.remarks || '-',
+        count: closing - opening, opening_balance: opening, closing_balance: closing,
+        created_date: nowIso(), updated_date: nowIso(),
+      });
+      return ok(updated, 'Stock updated');
     }
 
     if (sub === 'itemLowStockTable') {
       const low = items.filter((it) => it.track_inventory && num(it.available_quantity) <= num(it.low_stock, 5));
       return ok({ list: low, total: low.length, low_stock_count: low.length });
     }
-
     if (sub === 'itemStockReportTable') {
-      let company_total = 0;
-      let selling_total = 0;
+      let company_total = 0, selling_total = 0;
       const rows = items.map((it) => {
-        const qty = num(it.available_quantity, 0);
-        const cp = num(it.company_price, 0);
-        const sp = num(it.selling_price, 0);
-        const cTot = cp * qty;
-        const sTot = sp * qty;
-        company_total += cTot;
-        selling_total += sTot;
-        return {
-          _id: it._id,
-          name: it.name,
-          itemid: it.itemid || '',
-          available_quantity: qty,
-          company_price: cp,
-          company_total: cTot,
-          selling_price: sp,
-          selling_total: sTot,
-        };
+        const qty = num(it.available_quantity), cp = num(it.company_price), sp = num(it.selling_price);
+        company_total += cp * qty;
+        selling_total += sp * qty;
+        return { _id: it._id, name: it.name, itemid: it.itemid || '', available_quantity: qty, company_price: cp, company_total: cp * qty, selling_price: sp, selling_total: sp * qty };
       });
       return ok({ ...paginateReport(rows, query), company_total, selling_total });
     }
-
-    if (sub === 'categoryItemsReportTable' || sub === 'supplierItemsReportTable') {
+    if (sub === 'categoryItemsReportTable' || sub === 'supplierItemsReportTable' || sub === 'itemReportTable') {
       const rows = items.map((it) => ({
-        _id: it._id,
-        name: it.name,
-        category_name: it.category_name || 'General',
+        _id: it._id, name: it.name, category_name: it.category_name || 'General',
         supplier_name: it.supplier_name || 'Macisla Supply Co.',
-        available_quantity: num(it.available_quantity),
-        selling_price: num(it.selling_price),
-        company_price: num(it.company_price),
+        available_quantity: num(it.available_quantity), selling_price: num(it.selling_price), company_price: num(it.company_price),
       }));
       return ok(paginateReport(rows, query));
     }
-
-    if (sub === 'quantityCount') {
-      return ok({ count: items.length });
-    }
-
-    if (sub === 'demo' && sub2 === 'status') {
-      return ok({ on: false, total: 0, counts: {} });
-    }
-    if (sub === 'demo' && sub2 === 'remove') {
-      return ok({ removed: 0 }, 'Demo items removed');
-    }
-
+    if (sub === 'quantityCount') return ok({ count: items.length });
+    if (sub === 'demo' && sub2 === 'status') return ok({ on: false, total: 0, counts: {} });
+    if (sub === 'demo') return ok({ removed: 0 }, 'Demo disabled');
+    if (sub === 'icon-suggestion') return ok({ icon: '' });
+    if (sub === 'aiAvailability') return ok({ available: false });
+    if (sub === 'getJSONhsncode') return ok({ hsn: [] });
+    if (sub === 'catalogue-sharing') return ok({ enabled: false, branches: [] });
     if (sub === 'stockPreference') {
       if (method === 'PUT' || method === 'POST') {
         await store.put('meta', 'stock_preference', { _id: 'stock_preference', preference: body.preference || 'track' });
         return ok({ preference: body.preference || 'track' }, 'Preference saved');
       }
-      const pref = await store.get('meta', 'stock_preference');
-      return ok({ preference: pref?.preference || 'track' });
+      return ok({ preference: (await store.get('meta', 'stock_preference'))?.preference || 'track' });
     }
-
-    if (sub === 'priceSheet') {
+    if (['priceSheet', 'priceGrid', 'expiryReport', 'expiryReminders'].includes(sub) || sub.startsWith('priceHistory')) {
       return ok({ list: [], total: 0 });
     }
-
-    if (sub === 'uploadItemImage' && method === 'POST') {
-      const imgUrl = await saveUploadedFile(files[0], store, 'items');
-      return ok(imgUrl || 'item.svg', 'Image uploaded');
+    if (sub === 'deleteInstant') {
+      const delIds = Array.isArray(body?.data) ? body.data : [body?.id || query.id].filter(Boolean);
+      for (const delId of delIds) await store.del('items', String(delId));
+      return ok({ deleted: true, count: delIds.length });
     }
 
     if (!sub && method === 'GET') {
-      const { list, total } = applyListFilters(items, query, ['name', 'itemid', 'barcode_id', 'category_name', 'supplier_name']);
+      const { list, total } = applyListFilters(items, query, ['name', 'itemid', 'barcode_id', 'category_name', 'supplier_name'], branchTz);
       const summary = {
         total: items.length,
         inactive: items.filter((i) => i.status === 'Inactive' || i.available_for_sale === false).length,
@@ -1164,168 +1179,113 @@ export async function handlePosnicRequest(request, store, env = {}) {
       };
       return ok({ list, total, summary });
     }
-
     if (!sub && method === 'POST') {
+      const [cats, sups, units] = await Promise.all([store.list('categories'), store.list('suppliers'), store.list('units')]);
       const id = newObjectId();
-      const cats = await store.list('categories');
-      const cat = cats.find((c) => c._id === body.category_id || c.name === body.category_name);
-      const doc = {
-        _id: id,
-        id,
-        name: String(body.name || body.item_name || 'Untitled Item').trim(),
-        item_name: String(body.name || body.item_name || 'Untitled Item').trim(),
-        itemid: body.itemid || `SKU-${Date.now().toString().slice(-5)}`,
-        barcode_id: body.barcode_id || String(Date.now()).slice(-13),
-        category_id: cat?._id || body.category_id || '',
-        category_name: cat?.name || body.category_name || 'General',
-        supplier_id: body.supplier_id || DEFAULT_SUPPLIER_ID,
-        supplier_name: body.supplier_name || 'Macisla Supply Co.',
-        selling_price: num(body.selling_price),
-        mrp_price: num(body.mrp_price ?? body.selling_price),
-        company_price: num(body.company_price),
-        available_quantity: num(body.available_quantity, 0),
-        low_stock: num(body.low_stock, 5),
-        track_inventory: bool(body.track_inventory ?? body.inventory, true),
-        negative_stock: bool(body.negative_stock, false),
-        available_for_sale: body.available_for_sale !== false,
-        item_kind: body.item_kind || 'product',
-        unit: body.unit || 'qty',
-        tax: num(body.tax, 0),
-        tax_type: body.tax_type || 'Exclusive',
-        discount_amount: num(body.discount_amount, 0),
-        discount_percentage: num(body.discount_percentage, 0),
-        image: normalizeImageField(body.image, 'item.svg'),
-        tile_color: body.tile_color || '#2563EB',
-        tile_shape: body.tile_shape || 'rounded',
-        description: body.description || '',
-        branch_id: DEFAULT_BRANCH_ID,
-        status: 'Active',
-        created_by: currentUser?.user_name || 'admin',
-        created_date: nowIso(),
-        updated_date: nowIso(),
-      };
+      const doc = normalizeItemDoc(body, null, { cats, sups, units, branchId: DEFAULT_BRANCH_ID, userName: currentUser?.user_name, id });
       await store.put('items', id, doc);
       return ok(doc, 'Item added successfully');
     }
-
+    if (isObjectId(sub) && method === 'GET' && !sub2) {
+      const doc = await store.get('items', sub);
+      return doc ? ok(doc) : fail('Item not found', 404);
+    }
     if (isObjectId(sub) && (method === 'PUT' || method === 'PATCH' || method === 'POST')) {
       const existing = await store.get('items', sub);
-      if (existing) {
-        const cats = await store.list('categories');
-        const cat = cats.find((c) => c._id === (body.category_id ?? existing.category_id) || c.name === body.category_name);
-        const nextName = String(body.name || body.item_name || existing.name).trim();
-        const updated = {
-          ...existing,
-          ...body,
-          _id: sub,
-          id: sub,
-          name: nextName,
-          item_name: nextName,
-          category_id: cat?._id ?? body.category_id ?? existing.category_id,
-          category_name: cat?.name ?? body.category_name ?? existing.category_name,
-          selling_price: body.selling_price !== undefined ? num(body.selling_price) : existing.selling_price,
-          mrp_price: body.mrp_price !== undefined ? num(body.mrp_price) : existing.mrp_price,
-          company_price: body.company_price !== undefined ? num(body.company_price) : existing.company_price,
-          available_quantity: body.available_quantity !== undefined ? num(body.available_quantity) : existing.available_quantity,
-          image: body.image !== undefined ? normalizeImageField(body.image, existing.image || 'item.svg') : (existing.image || 'item.svg'),
-          updated_date: nowIso(),
-        };
-        await store.put('items', sub, updated);
-        return ok(updated, 'Item updated successfully');
-      }
+      if (!existing) return fail('Item not found', 404);
+      const payload = { ...body };
+      // /items/:id/details updates metadata/prices while preserving live stock count.
+      if (sub2 === 'details') delete payload.available_quantity;
+      const [cats, sups, units] = await Promise.all([store.list('categories'), store.list('suppliers'), store.list('units')]);
+      const updated = normalizeItemDoc(payload, existing, { cats, sups, units, branchId: DEFAULT_BRANCH_ID, userName: currentUser?.user_name, id: sub });
+      await store.put('items', sub, updated);
+      return ok(updated, 'Item updated successfully');
     }
   }
 
-  // ── 8. Categories (`/categories/*`) ──────────────────────────────────────────
+  // ── 6. Categories, Customers, Suppliers ──────────────────────────────────────
   if (root === 'categories') {
     const categories = await store.list('categories');
     const items = await store.list('items');
-
     if (sub === 'getCategoriesWithValidItems') {
       return ok(
         categories.map((c) => ({
-          id: c._id,
-          _id: c._id,
-          category_name: c.name || c.category_name,
-          category_img: c.image || 'category.svg',
-          name: c.name || c.category_name,
-          image: c.image || 'category.svg',
-          tile_color: c.tile_color || '#2563EB',
+          id: c._id, _id: c._id, category_name: c.name || c.category_name,
+          category_img: c.image || 'category.svg', name: c.name || c.category_name,
+          image: c.image || 'category.svg', tile_color: c.tile_color || '#2563EB',
         }))
       );
     }
-
     if (sub === 'getCategoryAjaxList') {
       const q = String(query.query || '').toLowerCase();
-      const matched = categories
+      const suggestions = categories
         .filter((c) => !q || String(c.name || '').toLowerCase().includes(q))
-        .map((c) => ({
-          id: c._id,
-          _id: c._id,
-          value: c.name,
-          name: c.name,
-          category_name: c.name,
-        }));
-      return jsonResp({ type: 'success', suggestions: matched, data: matched });
+        .map((c) => ({ id: c._id, _id: c._id, value: c.name, name: c.name, category_name: c.name }));
+      return jsonResp({ type: 'success', suggestions, data: suggestions });
     }
-
     if (!sub && method === 'GET') {
-      const enriched = categories.map((c) => ({
-        ...c,
-        items_count: items.filter((i) => String(i.category_id) === String(c._id)).length,
-      }));
-      const { list, total } = applyListFilters(enriched, query, ['name', 'description']);
+      const enriched = categories.map((c) => ({ ...c, items_count: items.filter((i) => String(i.category_id) === String(c._id)).length }));
+      const { list, total } = applyListFilters(enriched, query, ['name', 'description'], branchTz);
       return ok({ list, total });
+    }
+    if (!sub && method === 'POST') {
+      const id = newObjectId();
+      const name = String(body.name || body.category_name || 'Untitled Category').trim();
+      const doc = { ...body, _id: id, id, name, category_name: name, created_date: nowIso(), updated_date: nowIso() };
+      await store.put('categories', id, doc);
+      return ok(doc, 'Category added successfully');
     }
   }
 
-  // ── 9. Customers (`/customers/*`) ────────────────────────────────────────────
   if (root === 'customers') {
     const customers = await store.list('customers');
     if (sub === 'getCustomersAjaxList') {
       const q = String(query.query || '').toLowerCase();
-      const matched = customers
+      const suggestions = customers
         .filter((c) => !q || String(c.name || '').toLowerCase().includes(q) || String(c.phone || '').toLowerCase().includes(q))
-        .map((c) => ({
-          ...c,
-          id: c._id,
-          value: c.name,
-          customer_id: c._id,
-          customer_name: c.name,
-        }));
-      return jsonResp({ type: 'success', suggestions: matched, data: matched });
+        .map((c) => ({ ...c, id: c._id, value: c.name, customer_id: c._id, customer_name: c.name }));
+      return jsonResp({ type: 'success', suggestions, data: suggestions });
     }
-    if (sub === 'customerOutstandingReportTable') {
-      return ok({ list: [], total: 0 });
+    if (sub === 'getCustomerDetails') {
+      const doc = customers.find((c) => c._id === query.id);
+      return doc ? ok(doc) : fail('Customer not found', 404);
+    }
+    if (sub === 'customerOutstandingReportTable') return ok(paginateReport([], query));
+    if (!sub && method === 'POST') {
+      const id = newObjectId();
+      const name = String(body.name || body.customer_name || 'Customer').trim();
+      const doc = { ...body, _id: id, id, name, customer_name: name, created_date: nowIso(), updated_date: nowIso() };
+      await store.put('customers', id, doc);
+      return ok(doc, 'Customer added successfully');
     }
   }
 
-  // ── 10. Suppliers (`/suppliers/*`) ───────────────────────────────────────────
   if (root === 'suppliers') {
     const suppliers = await store.list('suppliers');
     if (sub === 'getSuppliersAjaxList') {
       const q = String(query.query || '').toLowerCase();
-      const matched = suppliers
+      const suggestions = suppliers
         .filter((s) => !q || String(s.name || '').toLowerCase().includes(q))
-        .map((s) => ({
-          ...s,
-          id: s._id,
-          value: s.name,
-          supplier_id: s._id,
-          supplier_name: s.name,
-        }));
-      return jsonResp({ type: 'success', suggestions: matched, data: matched });
+        .map((s) => ({ ...s, id: s._id, value: s.name, supplier_id: s._id, supplier_name: s.name }));
+      return jsonResp({ type: 'success', suggestions, data: suggestions });
+    }
+    if (!sub && method === 'POST') {
+      const id = newObjectId();
+      const name = String(body.name || body.supplier_name || 'Supplier').trim();
+      const doc = { ...body, _id: id, id, name, supplier_name: name, created_date: nowIso(), updated_date: nowIso() };
+      await store.put('suppliers', id, doc);
+      return ok(doc, 'Supplier added successfully');
     }
   }
 
-  // ── 11. Sales (`/sales/*`) ───────────────────────────────────────────────────
+  // ── 7. Sales & Unlocked Reports (`/sales/*`) ─────────────────────────────────
   if (root === 'sales') {
     const sales = await store.list('sales');
 
     if (sub === 'getLatestSales') {
       const wantHold = String(query.type || '').toLowerCase() === 'hold';
       const rows = sales
-        .filter((s) => (wantHold ? s.sale_process === 'Hold' : true))
+        .filter((s) => (wantHold ? s.sale_process === 'Hold' : s.sale_process !== 'Hold'))
         .sort((a, b) => String(b.created_date || '').localeCompare(String(a.created_date || '')))
         .slice(0, 25)
         .map((s) => ({
@@ -1355,34 +1315,38 @@ export async function handlePosnicRequest(request, store, env = {}) {
     if (sub === 'servingPeriods') {
       return ok({ restaurant_enabled: branch.table_options === true, serving_periods: [] });
     }
+    if (sub === 'historyFilterOptions') {
+      return ok({ payment_modes: ['Cash', 'QRIS', 'Card', 'Transfer'], users: users.map((u) => ({ id: u._id, name: u.user_name })) });
+    }
 
     if (sub === 'hold' && (method === 'POST' || method === 'PUT')) {
       const saved = await saveSale(body, store, branch, currentUser, { hold: true });
-      return ok(
-        {
-          sales_id: saved._id,
-          id: saved._id,
-          _id: saved._id,
-        },
-        'Sale parked successfully'
-      );
+      return ok({ sales_id: saved._id, id: saved._id, _id: saved._id }, 'Sale parked successfully');
+    }
+
+    if (sub === 'cancel' && isObjectId(sub2)) {
+      const existing = await store.get('sales', sub2);
+      if (!existing) return fail('Sale not found', 404);
+      const updated = { ...existing, sale_process: 'Cancel', payment_status: 'Cancelled', updated_date: nowIso() };
+      await store.put('sales', sub2, updated);
+      if (existing.sale_process !== 'Hold' && !/cancel/i.test(String(existing.sale_process || ''))) {
+        await adjustInventoryForSale(normalizeItemsPayload(existing.items), store, +1);
+      }
+      return ok(updated, 'Sale cancelled');
+    }
+
+    if (sub === 'returnSales' && method === 'POST') {
+      const saved = await saveSale({ ...body, sale_process: 'Return', payment_status: 'Refunded' }, store, branch, currentUser, { hold: false });
+      return ok({ sales_id: saved._id, id: saved._id, _id: saved._id, bill_no: saved.sales_id }, 'Return processed');
     }
 
     if (!sub && method === 'POST') {
       const saved = await saveSale(body, store, branch, currentUser, { hold: false });
       return ok(
         {
-          sales_id: saved._id,
-          id: saved._id,
-          _id: saved._id,
-          bill_no: saved.sales_id,
-          sms: false,
-          whatsapp: false,
-          print: false,
-          mail: false,
-          phone: saved.customer_phone || '',
-          name: saved.customer_name || 'Walk-in Customer',
-          customer_balance: 0,
+          sales_id: saved._id, id: saved._id, _id: saved._id, bill_no: saved.sales_id,
+          sms: false, whatsapp: false, print: false, mail: false,
+          phone: saved.customer_phone || '', name: saved.customer_name || 'Walk-in Customer', customer_balance: 0,
         },
         'Sales details added successfully'
       );
@@ -1390,10 +1354,9 @@ export async function handlePosnicRequest(request, store, env = {}) {
 
     if (!sub && method === 'GET') {
       const nonHold = sales.filter((s) => s.sale_process !== 'Hold');
-      const { list, total, allFiltered } = applyListFilters(nonHold, query, ['sales_id', 'customer_name', 'sold_by', 'payment_mode']);
+      const { list, total, allFiltered } = applyListFilters(nonHold, query, ['sales_id', 'customer_name', 'sold_by', 'payment_mode'], branchTz);
       const payTotals = new Map();
-      let grandTotal = 0;
-      let cancelled = 0;
+      let grandTotal = 0, cancelled = 0;
       for (const s of allFiltered) {
         if (/cancel/i.test(String(s.sale_process || '')) || /cancel/i.test(String(s.payment_status || ''))) {
           cancelled++;
@@ -1404,372 +1367,55 @@ export async function handlePosnicRequest(request, store, env = {}) {
         const pm = s.payment_mode || 'Cash';
         payTotals.set(pm, (payTotals.get(pm) || 0) + amt);
       }
-      const summary = {
-        count: allFiltered.length,
-        cancelled,
-        currencies: [
-          {
-            currencyCode: branch.currency_type || 'Rp',
-            currencySymbol: branch.currency_type || 'Rp',
-            currencyDigits: 2,
-            total: grandTotal,
-            payments: Array.from(payTotals.entries()).map(([methodName, amount]) => ({
-              method: methodName,
-              amount,
-            })),
-          },
-        ],
-      };
-      return ok({ list, total, summary });
+      return ok({
+        list,
+        total,
+        summary: {
+          count: allFiltered.length,
+          cancelled,
+          currencies: [
+            {
+              currencyCode: branch.currency_type || 'Rp',
+              currencySymbol: branch.currency_type || 'Rp',
+              currencyDigits: 2,
+              total: grandTotal,
+              payments: Array.from(payTotals.entries()).map(([methodName, amount]) => ({ method: methodName, amount })),
+            },
+          ],
+        },
+      });
     }
 
-    if (
-      [
-        'salesReports',
-        'instantSalesReports',
-        'dailySalesReports',
-        'salesSummaryReports',
-        'customerSalesReportTable',
-        'itemSalesReportTable',
-        'itemExpiryReportTable',
-        'categorySalesReportTable',
-        'paymentSaleTypeReport',
-        'paymentSalesTranscationReportTable',
-        'taxSalesReports',
-        'userReportTable',
-        'returnSalesReportTable',
-        'pendingSalesReportTable',
-        'supplierSalesReportTable',
-      ].includes(sub)
-    ) {
-      const completedSales = sales.filter(
-        (s) =>
-          s.sale_process !== 'Hold' &&
-          !/cancel/i.test(String(s.sale_process || '')) &&
-          inReportDateRange(s.created_date || s.date, query)
-      );
+    if (isObjectId(sub) && method === 'GET') {
+      const sale = await store.get('sales', sub);
+      return sale ? ok(sale) : fail('Sale not found', 404);
+    }
+    if (isObjectId(sub) && (method === 'PUT' || method === 'PATCH')) {
+      const existing = await store.get('sales', sub);
+      if (!existing) return fail('Sale not found', 404);
+      const saved = await saveSale({ ...body, sales_id: sub, alternative_id: existing.sales_id }, store, branch, currentUser, { hold: false });
+      return ok(saved, 'Sale updated');
+    }
 
-      if (sub === 'salesReports' || sub === 'instantSalesReports') {
-        const tender = String(query.tender || '').trim().toLowerCase();
-        const filtered = tender
-          ? completedSales.filter((s) => String(s.payment_mode || '').toLowerCase() === tender)
-          : completedSales;
-        const formatted = filtered.map((s) => {
-          const lineItems = normalizeItemsPayload(s.items).map((li) => ({
-            ...li,
-            item_sku: li.item_sku || li.itemid || li.barcode_id || '',
-            item_price: num(li.item_price ?? li.selling_price),
-            item_quantity: num(li.item_quantity ?? li.quantity, 1),
-            item_discount: num(li.item_discount),
-            item_discount_percentage: num(li.item_discount_percentage),
-            tax: num(li.tax),
-            tax_type: String(li.tax_type || 'exclusive').toLowerCase(),
-            total_amount: num(li.item_price_total ?? li.total_amount) || num(li.item_price ?? li.selling_price) * num(li.item_quantity, 1),
-          }));
-          return {
-            ...s,
-            string_date: s.string_date || s.date || s.created_date,
-            items: lineItems,
-            number_of_items: lineItems.length,
-            items_total: num(s.sales_total ?? s.total_amount),
-            extra_discount: num(s.extra_discount),
-          };
-        });
-        return ok(paginateReport(formatted, query));
-      }
-
-      if (sub === 'salesSummaryReports') {
-        let discounts = 0;
-        let cogs = 0;
-        let refunds = 0;
-        let net_sales = 0;
-        let net_sales_tax = 0;
-        for (const s of completedSales) {
-          const amt = num(s.sales_total ?? s.total_amount);
-          const tax = num(s.tax);
-          discounts += num(s.discount) + num(s.extra_discount);
-          cogs += num(s.sales_total_company_price);
-          if (/return/i.test(String(s.sale_process || ''))) {
-            refunds += amt;
-          } else {
-            net_sales += amt;
-            net_sales_tax += tax;
-          }
-        }
-        return ok({
-          discounts,
-          gross_profit: net_sales - cogs,
-          refunds,
-          cogs,
-          sales_exclude_tax: Math.max(0, net_sales - net_sales_tax),
-          sales_include_tax: net_sales,
-          net_sales,
-          net_sales_tax,
-          order_type_summary: [],
-        });
-      }
-
-      if (sub === 'dailySalesReports') {
-        const allItems = await store.list('items');
-        const stockById = new Map(allItems.map((it) => [String(it._id), it]));
-        const prodMap = new Map();
-        const payMap = new Map();
-        let totalExtraDiscount = 0;
-
-        for (const s of completedSales) {
-          totalExtraDiscount += num(s.extra_discount);
-          const pm = s.payment_mode || 'Cash';
-          payMap.set(pm, (payMap.get(pm) || 0) + num(s.sales_total ?? s.total_amount));
-
-          for (const li of normalizeItemsPayload(s.items)) {
-            const key = String(li.item_id || li.item_name || 'item');
-            const qty = num(li.item_quantity ?? li.quantity, 1);
-            const subTot = num(li.item_price ?? li.selling_price) * qty;
-            const tot = num(li.item_price_total ?? li.total_amount) || subTot;
-            const cost = num(li.company_price_total) || num(li.company_price) * qty;
-            const disc = num(li.item_discount) * qty;
-            const tax = (subTot * num(li.tax)) / 100;
-            const itemDoc = stockById.get(String(li.item_id));
-            const prev = prodMap.get(key) || {
-              product_name: li.item_name || li.name || 'Item',
-              product_sku: itemDoc?.itemid || li.itemid || li.barcode_id || '',
-              product_qty: 0,
-              product_subtotal: 0,
-              product_discount: 0,
-              product_tax: 0,
-              product_total: 0,
-              product_profit: 0,
-              closing_stock: itemDoc?.track_inventory ? num(itemDoc.available_quantity) : null,
-            };
-            prev.product_qty += qty;
-            prev.product_subtotal += subTot;
-            prev.product_discount += disc;
-            prev.product_tax += tax;
-            prev.product_total += tot;
-            prev.product_profit += tot - cost;
-            prodMap.set(key, prev);
-          }
-        }
-
-        return ok({
-          branch_details: {
-            date: nowIso(),
-            from_date: query.starting_date || nowIso().slice(0, 10),
-            to_date: query.ending_date || nowIso().slice(0, 10),
-            branch_name: branch.branch_name,
-            branch_address: branch.store_address || '',
-            branch_phone: branch.branch_phone || '',
-            branch_email: branch.branch_email || '',
-            period_label: 'Full day',
-            serving_periods: [],
-          },
-          product_details: Array.from(prodMap.values()),
-          payment_details: Array.from(payMap.entries()).map(([payment_mode, sale_payment]) => ({
-            payment_mode,
-            sale_payment,
-          })),
-          extra_discount: { total_sale_extra_discount: totalExtraDiscount, by_type: [] },
-          spoilage_details: [],
-        });
-      }
-
-      if (sub === 'itemSalesReportTable') {
-        const map = new Map();
-        for (const s of completedSales) {
-          for (const li of normalizeItemsPayload(s.items)) {
-            const key = String(li.item_id || li.item_name || 'item');
-            const qty = num(li.item_quantity ?? li.quantity, 1);
-            const tot = num(li.item_price_total ?? li.total_amount) || num(li.item_price ?? li.selling_price) * qty;
-            const cost = num(li.company_price_total) || num(li.company_price) * qty;
-            const prev = map.get(key) || {
-              name: li.item_name || li.name || 'Item',
-              item_quantity: 0,
-              sales_count: 0,
-              sales_profit: 0,
-              total_amount: 0,
-            };
-            prev.item_quantity += qty;
-            prev.sales_count += 1;
-            prev.total_amount += tot;
-            prev.sales_profit += tot - cost;
-            map.set(key, prev);
-          }
-        }
-        const rows = Array.from(map.values()).map((r) => ({
-          ...r,
-          sales_avg: r.sales_count > 0 ? r.total_amount / r.sales_count : 0,
-        }));
-        return ok(paginateReport(rows, query));
-      }
-
-      if (sub === 'categorySalesReportTable') {
-        const map = new Map();
-        for (const s of completedSales) {
-          for (const li of normalizeItemsPayload(s.items)) {
-            const cat = li.category_name || 'General';
-            const qty = num(li.item_quantity ?? li.quantity, 1);
-            const tot = num(li.item_price_total ?? li.total_amount) || num(li.item_price ?? li.selling_price) * qty;
-            const cost = num(li.company_price_total) || num(li.company_price) * qty;
-            const prev = map.get(cat) || {
-              name: cat,
-              item_quantity: 0,
-              sales_count: 0,
-              sales_profit: 0,
-              total_amount: 0,
-            };
-            prev.item_quantity += qty;
-            prev.sales_count += 1;
-            prev.total_amount += tot;
-            prev.sales_profit += tot - cost;
-            map.set(cat, prev);
-          }
-        }
-        const rows = Array.from(map.values()).map((r) => ({
-          ...r,
-          sales_avg: r.sales_count > 0 ? r.total_amount / r.sales_count : 0,
-        }));
-        return ok(paginateReport(rows, query));
-      }
-
-      if (sub === 'customerSalesReportTable') {
-        const map = new Map();
-        for (const s of completedSales) {
-          const cid = String(s.customer_id || s.customer_name || 'walkin');
-          const amt = num(s.sales_total ?? s.total_amount);
-          const isRet = /return/i.test(String(s.sale_process || ''));
-          const prev = map.get(cid) || {
-            customer_id: cid,
-            customer_name: s.customer_name || 'Walk-in Customer',
-            customer_phone: s.customer_phone || '0000000000',
-            sales_count: 0,
-            refund_payment: 0,
-            sales_payment: 0,
-          };
-          prev.sales_count += 1;
-          if (isRet) prev.refund_payment += amt;
-          else prev.sales_payment += amt;
-          map.set(cid, prev);
-        }
-        return ok(paginateReport(Array.from(map.values()), query));
-      }
-
-      if (sub === 'paymentSaleTypeReport') {
-        const map = new Map();
-        for (const s of completedSales) {
-          const pm = s.payment_mode || 'Cash';
-          const amt = num(s.sales_total ?? s.total_amount);
-          const isRet = /return/i.test(String(s.sale_process || ''));
-          const prev = map.get(pm) || {
-            sales_payment_mode: pm,
-            sales_payment: 0,
-            partial_amount: 0,
-            outstanding_amount: 0,
-            refund_payment: 0,
-            sales_count: 0,
-          };
-          prev.sales_count += 1;
-          if (isRet) prev.refund_payment += amt;
-          else prev.sales_payment += amt;
-          map.set(pm, prev);
-        }
-        return ok({ payment: Array.from(map.values()), currencyDigits: 2 });
-      }
-
-      if (sub === 'paymentSalesTranscationReportTable') {
-        const modeFilter = String(query.payment_mode || 'All').toLowerCase();
-        const filtered =
-          modeFilter && modeFilter !== 'all'
-            ? completedSales.filter((s) => String(s.payment_mode || '').toLowerCase() === modeFilter)
-            : completedSales;
-        const rows = filtered.map((s) => {
-          const ts = new Date(s.updated_date || s.created_date || Date.now()).getTime();
-          return {
-            _id: s._id,
-            sales_id: s.sales_id,
-            updated_date: { $date: { $numberLong: String(Number.isFinite(ts) ? ts : Date.now()) } },
-            user_name: s.sold_by || s.user_name || 'admin',
-            customer_name: s.customer_name || 'Walk-in Customer',
-            payment_mode: s.payment_mode || 'Cash',
-            items_total: num(s.sales_total ?? s.total_amount),
-            report_amount: num(s.sales_total ?? s.total_amount),
-            currencyDigits: 2,
-          };
-        });
-        return ok(paginateReport(rows, query));
-      }
-
-      if (sub === 'taxSalesReports') {
-        const tax_details = completedSales.map((s) => ({
-          _id: {
-            items: normalizeItemsPayload(s.items).map((li) => ({
-              ...li,
-              item_price: num(li.item_price ?? li.selling_price),
-              item_quantity: num(li.item_quantity ?? li.quantity, 1),
-              tax: num(li.tax),
-              tax_type: String(li.tax_type || 'exclusive').toLowerCase(),
-              tax_name: li.tax_name || `Tax ${num(li.tax)}%`,
-              tax_fields: null,
-            })),
-          },
-        }));
-        return ok({ tax_details });
-      }
-
-      if (sub === 'userReportTable') {
-        const map = new Map();
-        let totalSalesCount = 0;
-        let totalAmount = 0;
-        for (const s of completedSales) {
-          const uname = s.sold_by || s.user_name || 'admin';
-          const amt = num(s.sales_total ?? s.total_amount);
-          const cost = num(s.sales_total_company_price);
-          const isRet = /return/i.test(String(s.sale_process || ''));
-          totalSalesCount += 1;
-          totalAmount += amt;
-          const prev = map.get(uname) || {
-            user_name: uname,
-            sales_count: 0,
-            refund_payment: 0,
-            sales_profit: 0,
-            sales_payment: 0,
-          };
-          prev.sales_count += 1;
-          if (isRet) prev.refund_payment += amt;
-          else {
-            prev.sales_payment += amt;
-            prev.sales_profit += amt - cost;
-          }
-          map.set(uname, prev);
-        }
-        const rows = Array.from(map.values()).map((r) => ({
-          ...r,
-          sales_avg: r.sales_count > 0 ? r.sales_payment / r.sales_count : 0,
-        }));
-        return ok({
-          ...paginateReport(rows, query),
-          summary: { sales: totalSalesCount, amount: totalAmount },
-        });
-      }
-
-      if (sub === 'returnSalesReportTable') {
-        const returns = completedSales.filter((s) => /return/i.test(String(s.sale_process || '')));
-        return ok(paginateReport(returns, query));
-      }
-
-      if (sub === 'pendingSalesReportTable') {
-        const pending = completedSales.filter((s) => /unpaid|partial/i.test(String(s.payment_status || '')));
-        return ok(paginateReport(pending, query));
-      }
-
-      return ok(paginateReport([], query));
+    if (SALES_REPORT_SUBROUTES.has(sub)) {
+      return buildSalesReportResponse(sub, sales, query, store, branch, branchTz);
     }
   }
 
-  // ── 12. Settings (`/setting/*` and `/settings/*`) ────────────────────────────
+  // ── 8. Settings (`/setting/*` and `/settings/*`) ────────────────────────────
   if (root === 'setting' || root === 'settings') {
+    if (sub === 'group' && sub2) {
+      const metaKey = `settings_group_${sub2}`;
+      if (method === 'PUT' || method === 'POST') {
+        const nextValues = body.values && typeof body.values === 'object' ? body.values : body;
+        await store.put('meta', metaKey, { _id: metaKey, values: nextValues, updated_date: nowIso() });
+        return ok({ values: nextValues }, 'Settings saved');
+      }
+      const saved = await store.get('meta', metaKey);
+      return ok({ values: saved?.values || {} });
+    }
     if (sub === 'getThemeSettings') {
-      const theme = (await store.get('meta', 'theme')) || { theme: 'light', theme_name: 'default', primary_color: '#506fe4' };
-      return ok(theme);
+      return ok((await store.get('meta', 'theme')) || { theme: 'light', theme_name: 'default', primary_color: '#506fe4' });
     }
     if (sub === 'updateThemeSettings' && (method === 'POST' || method === 'PUT')) {
       const next = { _id: 'theme', ...body, updated_date: nowIso() };
@@ -1777,78 +1423,49 @@ export async function handlePosnicRequest(request, store, env = {}) {
       return ok(next, 'Theme updated');
     }
     if (sub === 'getTaxAll' || sub === 'getTaxAjaxList') {
-      const taxes = await store.list('taxes');
-      return ok(taxes);
+      const taxes = (await store.list('taxes')).map((t) => ({ ...t, tax_id: t.tax_id || t._id }));
+      return jsonResp({ type: 'success', status: true, message: 'Success', suggestions: taxes, data: taxes });
     }
-    if (sub === 'getPaymentAll') {
-      const payments = await store.list('payments');
-      return ok(payments);
-    }
-    if (sub === 'getDenomAll') {
-      const denoms = await store.list('denominations');
-      return ok(denoms);
-    }
+    if (sub === 'getPaymentAll') return ok(await store.list('payments'));
+    if (sub === 'getDenomAll') return ok(await store.list('denominations'));
     if (sub === 'getUnitAll' || sub === 'getUnitAjaxList') {
-      const units = await store.list('units');
-      return ok(units);
+      const units = (await store.list('units')).map((u) => ({
+        ...u,
+        unit_id: u.unit_id || u._id,
+        unit_value: u.unit_value || u.unit_short || u.unit_name,
+      }));
+      return jsonResp({ type: 'success', status: true, message: 'Success', suggestions: units, data: units });
     }
     if (sub === 'getDefaultCustomer') {
       const customers = await store.list('customers');
       const cust = customers.find((c) => c._id === branch.default_customer) || customers[0] || {};
-      return ok({
-        customer_id: cust._id || DEFAULT_CUSTOMER_ID,
-        customer_name: cust.name || 'Walk-in Customer',
-        customer: cust,
-      });
+      return ok({ customer_id: cust._id || DEFAULT_CUSTOMER_ID, customer_name: cust.name || 'Walk-in Customer', customer: cust });
     }
     if (sub === 'getDefaultSupplier') {
       const suppliers = await store.list('suppliers');
       const sup = suppliers.find((s) => s._id === branch.default_supplier) || suppliers[0] || {};
-      return ok({
-        supplier_id: sup._id || DEFAULT_SUPPLIER_ID,
-        supplier_name: sup.name || 'Macisla Supply Co.',
-        supplier: sup,
-      });
+      return ok({ supplier_id: sup._id || DEFAULT_SUPPLIER_ID, supplier_name: sup.name || 'Macisla Supply Co.', supplier: sup });
     }
     if (sub === 'getJSONCountry') return ok(COUNTRIES);
-    if (sub === 'getJSONState') {
-      const cid = Number(query.id || query.country_id || 102);
-      return ok(STATES_BY_COUNTRY[cid] || STATES_BY_COUNTRY[102]);
-    }
+    if (sub === 'getJSONState') return ok(STATES_BY_COUNTRY[Number(query.id || query.country_id || 102)] || STATES_BY_COUNTRY[102]);
     if (sub === 'getJSONCurrency') return ok(CURRENCIES);
     if (sub === 'getJSONTimeZone') return ok(TIMEZONES);
     if (sub === 'getJSONDate') return ok(DATE_FORMATS);
-    if (sub === 'starterLocale') {
-      return ok({ country: branch.country, currency: branch.currency_type, timezone: branch.time_zone });
-    }
-    if (sub === 'taxProfile') {
-      return ok({ country: branch.country || 'Indonesia', tax_label: 'PPN', gst_enabled: false });
-    }
-    if (sub === 'modifierGroups' || sub === 'priceLists') {
-      return ok([]);
-    }
-    if (sub === 'wording') {
-      return ok({ profile: 'retail', overrides: {} });
-    }
+    if (sub === 'starterLocale') return ok({ country: branch.country, currency: branch.currency_type, timezone: branchTz });
+    if (sub === 'taxProfile') return ok({ country: branch.country || 'Indonesia', tax_label: 'PPN', gst_enabled: false });
+    if (sub === 'modifierGroups' || sub === 'priceLists') return ok([]);
+    if (sub === 'wording') return ok({ profile: 'retail', overrides: {} });
     if (method === 'PUT' || method === 'POST') {
       const merged = { ...branch, ...body, updated_date: nowIso() };
       await store.put('branches', branch._id, merged);
-      return ok(
-        {
-          ...merged,
-          url: merged.print_url || false,
-          customer: merged.default_customer,
-          supplier: merged.default_supplier,
-        },
-        'Settings updated successfully'
-      );
+      return ok({ ...merged, url: merged.print_url || false, customer: merged.default_customer, supplier: merged.default_supplier }, 'Settings updated successfully');
     }
     return ok(branch);
   }
 
-  // ── 13. Expense & Receiving Reports, Shifts, Roster, Generic CRUD ────────────
+  // ── 9. Expenses, Receivings & Auxiliary Modules ──────────────────────────────
   if (root === 'expenses' && sub === 'expensesReportTable') {
-    const expenses = (await store.list('expenses')).filter((e) => inReportDateRange(e.created_date || e.date, query));
+    const expenses = (await store.list('expenses')).filter((e) => inReportDateRange(e.created_date || e.date, query, branchTz));
     const rows = expenses.map((e) => ({
       ...e,
       amount: num(e.amount ?? e.expense_amount),
@@ -1861,9 +1478,8 @@ export async function handlePosnicRequest(request, store, env = {}) {
     return ok(paginateReport(rows, query));
   }
   if (root === 'receivings' && ['receivingReportTable', 'returnReceivingReportTable', 'supplierReceivingReportTable'].includes(sub)) {
-    const recs = (await store.list('receivings')).filter((r) => inReportDateRange(r.created_date || r.date, query));
-    let purchased = 0;
-    let paid = 0;
+    const recs = (await store.list('receivings')).filter((r) => inReportDateRange(r.created_date || r.date, query, branchTz));
+    let purchased = 0, paid = 0;
     const rows = recs.map((r) => {
       const tot = num(r.receiving_total ?? r.total_amount);
       purchased += tot;
@@ -1883,53 +1499,42 @@ export async function handlePosnicRequest(request, store, env = {}) {
       summary: { count: rows.length, purchased, paid, outstanding: Math.max(0, purchased - paid), unknown: 0 },
     });
   }
-  if (root === 'shifts') {
-    return ok({ rows: [], active_shift: null });
+  if (root === 'receivings' && !sub && method === 'POST') {
+    const id = newObjectId();
+    const doc = { ...body, _id: id, id, created_date: nowIso(), updated_date: nowIso() };
+    await store.put('receivings', id, doc);
+    await adjustInventoryForSale(normalizeItemsPayload(body.items), store, +1);
+    return ok(doc, 'Receiving saved successfully');
   }
-  if (root === 'roster') {
-    return ok([]);
-  }
-  if (root === 'table' || root === 'kot') {
-    return ok({ list: [], total: 0, tables: [] });
-  }
+  if (root === 'shifts') return ok({ rows: [], active_shift: null });
+  if (root === 'roster') return ok([]);
+  if (root === 'table' || root === 'kot') return ok({ list: [], total: 0, tables: [] });
   if (root === 'stocklogs') {
     const logs = await store.list('stocklogs');
-    return ok({ list: logs, total: logs.length });
+    return ok(applyListFilters(logs, query, ['item_name', 'process', 'reference'], branchTz));
   }
 
-  // Generic CRUD for all Posnic document collections
+  // ── 10. Generic CRUD ─────────────────────────────────────────────────────────
   const collection = root || 'misc';
   if (!sub && method === 'GET') {
     const docs = await store.list(collection);
-    const { list, total } = applyListFilters(docs, query, ['name', 'title', 'phone', 'email', 'description', 'sales_id']);
+    const { list, total } = applyListFilters(docs, query, ['name', 'title', 'phone', 'email', 'description', 'sales_id'], branchTz);
     return ok({ list, total });
   }
   if (sub && method === 'GET') {
     const doc = await store.get(collection, sub);
-    if (doc) return ok(doc);
-    // Graceful empty response for auxiliary GET subroutes (e.g. reports/xxx)
-    return ok({ list: [], total: 0 });
+    return doc ? ok(doc) : ok({ list: [], total: 0 });
   }
   if (!sub && method === 'POST') {
     const id = newObjectId();
-    const doc = {
-      ...body,
-      _id: id,
-      id,
-      created_date: nowIso(),
-      updated_date: nowIso(),
-    };
+    const doc = { ...body, _id: id, id, created_date: nowIso(), updated_date: nowIso() };
     await store.put(collection, id, doc);
     return ok(doc, 'Saved successfully');
   }
   if (sub && (method === 'PUT' || method === 'PATCH' || method === 'POST')) {
     const existing = await store.get(collection, sub);
-    if (!existing && !isObjectId(sub)) {
-      // Auxiliary Posnic action subroute (e.g. /users/ssoClientLogin) — never pollute collections
-      return ok({ ok: true });
-    }
-    const baseDoc = existing || { _id: sub, id: sub, created_date: nowIso() };
-    const updated = { ...baseDoc, ...body, _id: sub, id: sub, updated_date: nowIso() };
+    if (!existing && !isObjectId(sub)) return ok({ ok: true });
+    const updated = { ...(existing || { created_date: nowIso() }), ...body, _id: sub, id: sub, updated_date: nowIso() };
     await store.put(collection, sub, updated);
     return ok(updated, 'Updated successfully');
   }
@@ -1941,31 +1546,269 @@ export async function handlePosnicRequest(request, store, env = {}) {
     if (Array.isArray(body?.ids)) rawIds.push(...body.ids);
     if (body?.id) rawIds.push(body.id);
     if (query?.id) rawIds.push(query.id);
-
     const uniqueIds = [...new Set(rawIds.map((x) => String(x?._id || x?.id || x || '').trim()).filter(Boolean))];
-    for (const delId of uniqueIds) {
-      await store.del(collection, delId);
-    }
+    for (const delId of uniqueIds) await store.del(collection, delId);
     return ok({ deleted: true, count: uniqueIds.length, ids: uniqueIds, ok: 1 }, 'Deleted successfully');
   }
 
   return ok({});
 }
 
+const SALES_REPORT_SUBROUTES = new Set([
+  'salesReports', 'instantSalesReports', 'instantSaleDetails', 'dailySalesReports', 'salesSummaryReports',
+  'customerSalesReportTable', 'customerSaleDetails', 'itemSalesReportTable', 'itemSaleDetails',
+  'itemExpiryReportTable', 'categorySalesReportTable', 'categorySaleDetails', 'paymentSaleTypeReport',
+  'paymentSalesTranscationReportTable', 'paymentReturnSalesTranscationReportTable', 'taxSalesReports',
+  'taxSummaryReportTable', 'taxPayable', 'taxPayableRegister', 'gstOneReportTable', 'gstThreeReportTable',
+  'userReportTable', 'userSalesDetails', 'returnSalesReportTable', 'pendingSalesReportTable',
+  'supplierSalesReportTable', 'salesGraphicalReports', 'itemGraphicalReports', 'userGraphicalReports',
+  'paymentGraphicalReports',
+]);
+
+async function buildSalesReportResponse(sub, sales, query, store, branch, branchTz) {
+  const completedSales = sales.filter(
+    (s) => s.sale_process !== 'Hold' && !/cancel/i.test(String(s.sale_process || '')) && inReportDateRange(s.created_date || s.date, query, branchTz)
+  );
+
+  if (sub === 'salesReports' || sub === 'instantSalesReports') {
+    const tender = String(query.tender || '').trim().toLowerCase();
+    const filtered = tender ? completedSales.filter((s) => String(s.payment_mode || '').toLowerCase() === tender) : completedSales;
+    const formatted = filtered.map((s) => {
+      const lineItems = normalizeItemsPayload(s.items).map((li) => ({
+        ...li,
+        item_sku: li.item_sku || li.itemid || li.barcode_id || '',
+        item_price: num(li.item_price ?? li.selling_price),
+        item_quantity: num(li.item_quantity ?? li.quantity, 1),
+        item_discount: num(li.item_discount),
+        item_discount_percentage: num(li.item_discount_percentage),
+        tax: num(li.tax),
+        tax_type: String(li.tax_type || 'exclusive').toLowerCase(),
+        total_amount: num(li.item_price_total ?? li.total_amount) || num(li.item_price ?? li.selling_price) * num(li.item_quantity, 1),
+      }));
+      return {
+        ...s,
+        string_date: s.string_date || s.date || s.created_date,
+        items: lineItems,
+        number_of_items: lineItems.length,
+        items_total: num(s.sales_total ?? s.total_amount),
+        extra_discount: num(s.extra_discount),
+      };
+    });
+    return ok(paginateReport(formatted, query));
+  }
+
+  if (sub === 'instantSaleDetails') {
+    const found = completedSales.find((s) => s._id === query.id || s.sales_id === query.id);
+    return found ? ok(found) : fail('Sale not found', 404);
+  }
+
+  if (sub === 'salesSummaryReports') {
+    let discounts = 0, cogs = 0, refunds = 0, net_sales = 0, net_sales_tax = 0;
+    for (const s of completedSales) {
+      const amt = num(s.sales_total ?? s.total_amount);
+      discounts += num(s.discount) + num(s.extra_discount);
+      cogs += num(s.sales_total_company_price);
+      if (/return/i.test(String(s.sale_process || ''))) refunds += amt;
+      else {
+        net_sales += amt;
+        net_sales_tax += num(s.tax);
+      }
+    }
+    return ok({
+      discounts, gross_profit: net_sales - cogs, refunds, cogs,
+      sales_exclude_tax: Math.max(0, net_sales - net_sales_tax),
+      sales_include_tax: net_sales, net_sales, net_sales_tax, order_type_summary: [],
+    });
+  }
+
+  if (sub === 'dailySalesReports') {
+    const allItems = await store.list('items');
+    const stockById = new Map(allItems.map((it) => [String(it._id), it]));
+    const prodMap = new Map(), payMap = new Map();
+    let totalExtraDiscount = 0;
+    for (const s of completedSales) {
+      totalExtraDiscount += num(s.extra_discount);
+      const pm = s.payment_mode || 'Cash';
+      payMap.set(pm, (payMap.get(pm) || 0) + num(s.sales_total ?? s.total_amount));
+      for (const li of normalizeItemsPayload(s.items)) {
+        const key = String(li.item_id || li.item_name || 'item');
+        const qty = num(li.item_quantity ?? li.quantity, 1);
+        const subTot = num(li.item_price ?? li.selling_price) * qty;
+        const tot = num(li.item_price_total ?? li.total_amount) || subTot;
+        const cost = num(li.company_price_total) || num(li.company_price) * qty;
+        const itemDoc = stockById.get(String(li.item_id));
+        const prev = prodMap.get(key) || {
+          product_name: li.item_name || li.name || 'Item',
+          product_sku: itemDoc?.itemid || li.itemid || li.barcode_id || '',
+          product_qty: 0, product_subtotal: 0, product_discount: 0, product_tax: 0, product_total: 0, product_profit: 0,
+          closing_stock: itemDoc?.track_inventory ? num(itemDoc.available_quantity) : null,
+        };
+        prev.product_qty += qty;
+        prev.product_subtotal += subTot;
+        prev.product_discount += num(li.item_discount) * qty;
+        prev.product_tax += (subTot * num(li.tax)) / 100;
+        prev.product_total += tot;
+        prev.product_profit += tot - cost;
+        prodMap.set(key, prev);
+      }
+    }
+    return ok({
+      branch_details: {
+        date: nowIso(), from_date: query.starting_date || nowIso().slice(0, 10), to_date: query.ending_date || nowIso().slice(0, 10),
+        branch_name: branch.branch_name, branch_address: branch.store_address || '', branch_phone: branch.branch_phone || '',
+        branch_email: branch.branch_email || '', period_label: 'Full day', serving_periods: [],
+      },
+      product_details: Array.from(prodMap.values()),
+      payment_details: Array.from(payMap.entries()).map(([payment_mode, sale_payment]) => ({ payment_mode, sale_payment })),
+      extra_discount: { total_sale_extra_discount: totalExtraDiscount, by_type: [] },
+      spoilage_details: [],
+    });
+  }
+
+  if (sub === 'itemSalesReportTable' || sub === 'categorySalesReportTable') {
+    const byCat = sub === 'categorySalesReportTable';
+    const map = new Map();
+    for (const s of completedSales) {
+      for (const li of normalizeItemsPayload(s.items)) {
+        const key = byCat ? (li.category_name || 'General') : String(li.item_id || li.item_name || 'item');
+        const qty = num(li.item_quantity ?? li.quantity, 1);
+        const tot = num(li.item_price_total ?? li.total_amount) || num(li.item_price ?? li.selling_price) * qty;
+        const cost = num(li.company_price_total) || num(li.company_price) * qty;
+        const prev = map.get(key) || { name: byCat ? key : (li.item_name || li.name || 'Item'), item_quantity: 0, sales_count: 0, sales_profit: 0, total_amount: 0 };
+        prev.item_quantity += qty;
+        prev.sales_count += 1;
+        prev.total_amount += tot;
+        prev.sales_profit += tot - cost;
+        map.set(key, prev);
+      }
+    }
+    return ok(paginateReport(Array.from(map.values()).map((r) => ({ ...r, sales_avg: r.sales_count > 0 ? r.total_amount / r.sales_count : 0 })), query));
+  }
+
+  if (sub === 'customerSalesReportTable') {
+    const map = new Map();
+    for (const s of completedSales) {
+      const cid = String(s.customer_id || s.customer_name || 'walkin');
+      const amt = num(s.sales_total ?? s.total_amount);
+      const prev = map.get(cid) || { customer_id: cid, customer_name: s.customer_name || 'Walk-in Customer', customer_phone: s.customer_phone || '0000000000', sales_count: 0, refund_payment: 0, sales_payment: 0 };
+      prev.sales_count += 1;
+      if (/return/i.test(String(s.sale_process || ''))) prev.refund_payment += amt;
+      else prev.sales_payment += amt;
+      map.set(cid, prev);
+    }
+    return ok(paginateReport(Array.from(map.values()), query));
+  }
+
+  if (sub === 'paymentSaleTypeReport') {
+    const map = new Map();
+    for (const s of completedSales) {
+      const pm = s.payment_mode || 'Cash';
+      const amt = num(s.sales_total ?? s.total_amount);
+      const prev = map.get(pm) || { sales_payment_mode: pm, sales_payment: 0, partial_amount: 0, outstanding_amount: 0, refund_payment: 0, sales_count: 0 };
+      prev.sales_count += 1;
+      if (/return/i.test(String(s.sale_process || ''))) prev.refund_payment += amt;
+      else prev.sales_payment += amt;
+      map.set(pm, prev);
+    }
+    return ok({ payment: Array.from(map.values()), currencyDigits: 2 });
+  }
+
+  if (sub === 'paymentSalesTranscationReportTable' || sub === 'paymentReturnSalesTranscationReportTable') {
+    const wantRet = sub.startsWith('paymentReturn');
+    const modeFilter = String(query.payment_mode || 'All').toLowerCase();
+    const filtered = completedSales.filter((s) => {
+      const isRet = /return/i.test(String(s.sale_process || ''));
+      if (wantRet !== isRet) return false;
+      return !modeFilter || modeFilter === 'all' || String(s.payment_mode || '').toLowerCase() === modeFilter;
+    });
+    const rows = filtered.map((s) => {
+      const ts = new Date(s.updated_date || s.created_date || Date.now()).getTime();
+      return {
+        _id: s._id, sales_id: s.sales_id,
+        updated_date: { $date: { $numberLong: String(Number.isFinite(ts) ? ts : Date.now()) } },
+        user_name: s.sold_by || s.user_name || 'admin',
+        customer_name: s.customer_name || 'Walk-in Customer',
+        payment_mode: s.payment_mode || 'Cash',
+        items_total: num(s.sales_total ?? s.total_amount),
+        report_amount: num(s.sales_total ?? s.total_amount),
+        currencyDigits: 2,
+      };
+    });
+    return ok(paginateReport(rows, query));
+  }
+
+  if (sub === 'taxSalesReports') {
+    const tax_details = completedSales.map((s) => ({
+      _id: {
+        items: normalizeItemsPayload(s.items).map((li) => ({
+          ...li, item_price: num(li.item_price ?? li.selling_price), item_quantity: num(li.item_quantity ?? li.quantity, 1),
+          tax: num(li.tax), tax_type: String(li.tax_type || 'exclusive').toLowerCase(), tax_name: li.tax_name || `Tax ${num(li.tax)}%`, tax_fields: null,
+        })),
+      },
+    }));
+    return ok({ tax_details });
+  }
+
+  if (sub === 'userReportTable') {
+    const map = new Map();
+    let totalSalesCount = 0, totalAmount = 0;
+    for (const s of completedSales) {
+      const uname = s.sold_by || s.user_name || 'admin';
+      const amt = num(s.sales_total ?? s.total_amount);
+      const cost = num(s.sales_total_company_price);
+      totalSalesCount += 1;
+      totalAmount += amt;
+      const prev = map.get(uname) || { user_name: uname, sales_count: 0, refund_payment: 0, sales_profit: 0, sales_payment: 0 };
+      prev.sales_count += 1;
+      if (/return/i.test(String(s.sale_process || ''))) prev.refund_payment += amt;
+      else {
+        prev.sales_payment += amt;
+        prev.sales_profit += amt - cost;
+      }
+      map.set(uname, prev);
+    }
+    const rows = Array.from(map.values()).map((r) => ({ ...r, sales_avg: r.sales_count > 0 ? r.sales_payment / r.sales_count : 0 }));
+    return ok({ ...paginateReport(rows, query), summary: { sales: totalSalesCount, amount: totalAmount } });
+  }
+
+  if (sub === 'userSalesDetails') {
+    const userId = String(query.user_id || '').trim();
+    const matched = userId ? completedSales.filter((s) => String(s.user_id) === userId) : completedSales;
+    const totalSum = matched.reduce((acc, s) => acc + num(s.sales_total ?? s.total_amount), 0);
+    return ok({ table: { data: paginateReport(matched.map((s) => ({ ...s, items_total: num(s.sales_total ?? s.total_amount) })), query) }, total: matched.length ? [totalSum] : [] });
+  }
+
+  if (sub === 'returnSalesReportTable') return ok(paginateReport(completedSales.filter((s) => /return/i.test(String(s.sale_process || ''))), query));
+  if (sub === 'pendingSalesReportTable') return ok(paginateReport(completedSales.filter((s) => /unpaid|partial/i.test(String(s.payment_status || ''))), query));
+  if (sub.endsWith('GraphicalReports')) return ok([]);
+  return ok(paginateReport([], query));
+}
+
+async function adjustInventoryForSale(lineItems, store, sign) {
+  const now = nowIso();
+  for (const li of lineItems) {
+    if (!li.item_id) continue;
+    const item = await store.get('items', li.item_id);
+    if (item && item.track_inventory) {
+      const nextQty = Math.max(0, num(item.available_quantity) + sign * num(li.item_quantity, 1));
+      await store.put('items', item._id, { ...item, available_quantity: nextQty, updated_date: now });
+    }
+  }
+}
+
 async function saveSale(body, store, branch, currentUser, { hold = false } = {}) {
   const existingId = String(body.sales_id || '').trim();
-  const isUpdate = existingId.length === 24 && /^[a-f0-9]+$/i.test(existingId);
+  const isUpdate = isObjectId(existingId);
   const id = isUpdate ? existingId : newObjectId();
-  const counters = (await store.get('meta', 'counters')) || { _id: 'counters', sale_seq: 1002 };
+  const counters = (await store.get('meta', 'counters')) || { _id: 'counters', sale_seq: 1000 };
   let billNo = body.alternative_id;
   if (!billNo || !isUpdate) {
-    counters.sale_seq = num(counters.sale_seq, 1002) + 1;
+    counters.sale_seq = num(counters.sale_seq, 1000) + 1;
     await store.put('meta', 'counters', counters);
     billNo = `${branch.sales_prefix || 'S'}-${counters.sale_seq}`;
   }
 
-  const rawItems = normalizeItemsPayload(body.items);
-  const lineItems = rawItems.map((li) => {
+  const lineItems = normalizeItemsPayload(body.items).map((li) => {
     const qty = num(li.item_quantity ?? li.quantity, 1);
     const unitPrice = num(li.sale_inline_item_price ?? li.item_price ?? li.selling_price);
     const total = num(li.item_price_total) || unitPrice * qty;
@@ -1985,32 +1828,23 @@ async function saveSale(body, store, branch, currentUser, { hold = false } = {})
     };
   });
 
-  const computedTotal =
-    num(body.sales_total) ||
-    lineItems.reduce((sum, li) => sum + num(li.item_price_total), 0);
-  const computedCost =
-    num(body.sales_total_company_price) ||
-    lineItems.reduce((sum, li) => sum + num(li.company_price_total), 0);
-
+  const computedTotal = num(body.sales_total) || lineItems.reduce((sum, li) => sum + num(li.item_price_total), 0);
+  const computedCost = num(body.sales_total_company_price) || lineItems.reduce((sum, li) => sum + num(li.company_price_total), 0);
   const now = nowIso();
+
   const doc = {
-    _id: id,
-    id,
-    sales_document_id: id,
-    sales_id: billNo,
-    branch_id: branch._id,
-    register_id: body.register_id || DEFAULT_REGISTER_ID,
-    user_id: currentUser?._id || DEFAULT_ADMIN_ID,
-    user_name: currentUser?.user_name || 'admin',
+    _id: id, id, sales_document_id: id, sales_id: billNo,
+    branch_id: branch._id, register_id: body.register_id || DEFAULT_REGISTER_ID,
+    user_id: currentUser?._id || DEFAULT_ADMIN_ID, user_name: currentUser?.user_name || 'admin',
     sold_by: currentUser ? `${currentUser.firstname || ''} ${currentUser.lastname || ''}`.trim() : 'Macisla Admin',
     customer_id: body.customer_id || DEFAULT_CUSTOMER_ID,
     customer_name: body.customer_name || 'Walk-in Customer',
     customer_phone: body.customer_phone || '0000000000',
     customer_email: body.customer_email || '',
     customer_address: body.customer_address || '',
-    payment_mode: hold ? '' : (body.payment_mode || 'Cash'),
-    payment_status: hold ? 'Unpaid' : (body.payment_status || 'Paid'),
-    sale_process: hold ? 'Hold' : (body.sale_process || 'Add'),
+    payment_mode: hold ? '' : body.payment_mode || 'Cash',
+    payment_status: hold ? 'Unpaid' : body.payment_status || 'Paid',
+    sale_process: hold ? 'Hold' : body.sale_process || 'Add',
     items: lineItems,
     number_of_items: lineItems.length,
     sales_sub_total: num(body.sales_sub_total) || computedTotal,
@@ -2032,31 +1866,6 @@ async function saveSale(body, store, branch, currentUser, { hold = false } = {})
   };
 
   await store.put('sales', id, doc);
-
-  // Decrement inventory for tracked items on finalized sales
-  if (!hold) {
-    for (const li of lineItems) {
-      if (!li.item_id) continue;
-      const item = await store.get('items', li.item_id);
-      if (item && item.track_inventory) {
-        const nextQty = Math.max(0, num(item.available_quantity) - num(li.item_quantity, 1));
-        await store.put('items', item._id, {
-          ...item,
-          available_quantity: nextQty,
-          updated_date: now,
-        });
-      }
-    }
-  }
-
+  if (!hold) await adjustInventoryForSale(lineItems, store, /return/i.test(doc.sale_process) ? +1 : -1);
   return doc;
-}
-
-async function saveUploadedFile(entry, store, folder) {
-  if (!entry || !entry.file || !store.putObject) return '';
-  const ext = String(entry.file.name || 'file.png').split('.').pop() || 'png';
-  const key = `pos/${folder}/${Date.now()}-${Math.random().toString(16).slice(2, 8)}.${ext}`;
-  const buf = await entry.file.arrayBuffer();
-  await store.putObject(key, buf, entry.file.type || 'application/octet-stream');
-  return `/r2/${key}`;
 }

@@ -1,21 +1,5 @@
-// Macisla_POS — Canonical Catalog & Store Settings Seed Data
-// Auto-updated in real time when you add/edit items, categories, customers, or settings
-// in the local POS UI (`http://127.0.0.1:3088`). Commit & push to deploy changes to Cloudflare D1.
-
-export const SYNC_COLLECTIONS = [
-  "branches",
-  "users",
-  "registers",
-  "taxes",
-  "payments",
-  "units",
-  "denominations",
-  "categories",
-  "suppliers",
-  "customers",
-  "items",
-  "meta"
-];
+// Macisla POS — Canonical Starter Catalog & Store Settings Seed Data
+// Seeded once on an empty database (0 starter sales); subsequent edits in the UI persist in D1/SQLite.
 
 export const DEFAULT_BRANCH_ID = '665000000000000000000010';
 export const DEFAULT_REGISTER_ID = '665000000000000000000021';
@@ -25,1041 +9,481 @@ export const DEFAULT_CUSTOMER_ID = '665000000000000000000301';
 export const DEFAULT_SUPPLIER_ID = '665000000000000000000401';
 export const DEFAULT_TAX_ID = '665000000000000000000501';
 
-export function computeSeedVersion(data) {
-  const str = JSON.stringify(data);
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return 'seed-' + (h >>> 0).toString(16).padStart(8, '0');
-}
+const SEED_TS = '2026-11-20T00:00:00.000Z';
 
 export const SEED_DATA = {
-  "branches": [
+  branches: [
     {
-      "_id": "665000000000000000000010",
-      "id": "665000000000000000000010",
-      "branch_name": "Macisla Main Store",
-      "name": "Macisla Main Store",
-      "branch_image": "store.png",
-      "logo": "store.png",
-      "store_address": "Jl. Senopati No. 88, Kebayoran Baru",
-      "address": "Jl. Senopati No. 88, Kebayoran Baru",
-      "printing_address": "Jl. Senopati No. 88, Kebayoran Baru, Jakarta Selatan",
-      "store_email": "pos@macisla.com",
-      "branch_email": "pos@macisla.com",
-      "store_telephone": "+62 812-8888-9900",
-      "branch_phone": "+62 812-8888-9900",
-      "store_alternativephone": "",
-      "place": "Kebayoran Baru",
-      "city": "Jakarta Selatan",
-      "state": "DKI Jakarta",
-      "country": "Indonesia",
-      "country_id": 102,
-      "pincode": "12190",
-      "website": "https://pos.macisla.com",
-      "languge": "English",
-      "currency": "IDR",
-      "currency_text": "IDR",
-      "currency_type": "Rp",
-      "currency_value": [
+      _id: DEFAULT_BRANCH_ID,
+      id: DEFAULT_BRANCH_ID,
+      branch_name: 'Macisla Main Store',
+      name: 'Macisla Main Store',
+      branch_image: 'store.png',
+      logo: 'store.png',
+      store_address: 'Jl. Senopati No. 88, Kebayoran Baru',
+      address: 'Jl. Senopati No. 88, Kebayoran Baru',
+      printing_address: 'Jl. Senopati No. 88, Kebayoran Baru, Jakarta Selatan',
+      store_email: 'pos@macisla.com',
+      branch_email: 'pos@macisla.com',
+      store_telephone: '+62 812-8888-9900',
+      branch_phone: '+62 812-8888-9900',
+      store_alternativephone: '',
+      place: 'Kebayoran Baru',
+      city: 'Jakarta Selatan',
+      state: 'DKI Jakarta',
+      country: 'Indonesia',
+      country_id: 102,
+      pincode: '12190',
+      website: 'https://pos.macisla.com',
+      languge: 'English',
+      currency: 'IDR',
+      currency_text: 'IDR',
+      currency_type: 'Rp',
+      currency_value: [{ currency_sign: 'Rp', currency_text: 'IDR' }],
+      time_zone: 'Asia/Jakarta',
+      time_format: 'enable',
+      client_dateformat: 'YYYY-MM-DD',
+      server_dateformat: 'YYYY-MM-DD',
+      dateformat_text: 'YYYY-MM-DD',
+      sales_prefix: 'S',
+      receiving_prefix: 'P',
+      invoice_prefix: 'INV-',
+      invoice_due_days: 30,
+      invoice_terms: 'Thank you for your business.',
+      print_type: 'thermal',
+      print_size: '80mm',
+      print_character: '42',
+      bill_print_copies: 1,
+      print_url: false,
+      print_logoimg: true,
+      print_sale_notes: true,
+      customer_print: true,
+      printall: false,
+      roundOff: false,
+      keyboard_view: false,
+      stock_management: true,
+      stock_management_log: true,
+      table_options: false,
+      cash_register_enable: true,
+      enable_multi_payment: true,
+      sale_quick_edit_enable: true,
+      allow_sale_date_edit: true,
+      allow_payment_correction: true,
+      allow_sale_hard_delete: true,
+      module_tax_enable: true,
+      module_credit_enable: true,
+      module_marketing_enable: false,
+      module_messaging_enable: false,
+      module_channels_enable: false,
+      module_online_ordering_enable: false,
+      module_kiosk_enable: false,
+      module_captain_enable: false,
+      module_mobile_pos_enable: false,
+      module_billing_outlets_enable: false,
+      module_delivery_partners_enable: false,
+      module_webshop_enable: false,
+      module_recyclebin_enable: true,
+      module_demo_data_enable: false,
+      module_themes_enable: true,
+      module_cashbook_enable: true,
+      quick_sale_enable: true,
+      quotes_enable: true,
+      invoices_enable: true,
+      staff_shifts_enable: true,
+      staff_roster_enable: true,
+      staff_tips_enable: false,
+      ai_enabled: false,
+      ask_posnic_enabled: false,
+      customer_checkbox: true,
+      supplier_checkbox: true,
+      tax_checkbox: true,
+      default_customer: DEFAULT_CUSTOMER_ID,
+      default_supplier: DEFAULT_SUPPLIER_ID,
+      default_tax: DEFAULT_TAX_ID,
+      tax_type: 'exclusive',
+      tax_percentage: 0,
+      discount_amount: '0',
+      discount_percentage: '0',
+      indian_gst: 'gst_off',
+      branch_gstin_number: '',
+      notification_range: 5,
+      sms_auto_send_time: '09:00 PM',
+      sms_retry_period: '15',
+      sms_max_retries: '3',
+      payment_gateway: { status: 'false', key: '', secret: '' },
+      phonepe_payment_gateway: { merchantId: '', saltKey: '' },
+      email_fields: [],
+      register: [{ _id: DEFAULT_REGISTER_ID, register_name: 'Main Counter Register' }],
+      header_print: 'Macisla Main Store',
+      footer_print: 'Thank you for visiting Macisla! pos.macisla.com',
+      regular_body_print: null,
+      thermal_body_print: null,
+      online_ordering: { store_id: 'macisla', enabled: false },
+      first_run_done: true,
+      first_run_decided: true,
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
+    },
+  ],
+  users: [
+    {
+      _id: DEFAULT_ADMIN_ID,
+      id: DEFAULT_ADMIN_ID,
+      name: 'admin',
+      user_name: 'admin',
+      username: 'admin',
+      firstname: 'Macisla',
+      lastname: 'Admin',
+      email: 'admin@macisla.com',
+      phone: '+62 812-8888-9900',
+      password: 'admin',
+      usertype: 'super_admin',
+      role: 'super_admin',
+      image: 'user.svg',
+      activate: true,
+      status: 'Active',
+      branch_id: [DEFAULT_BRANCH_ID],
+      branch_access: [
         {
-          "currency_sign": "Rp",
-          "currency_text": "IDR"
-        }
+          branch_id: { $oid: DEFAULT_BRANCH_ID },
+          branch_name: 'Macisla Main Store',
+          branch_image: 'store.png',
+        },
       ],
-      "time_zone": "Asia/Jakarta",
-      "time_format": "enable",
-      "client_dateformat": "YYYY-MM-DD",
-      "server_dateformat": "YYYY-MM-DD",
-      "dateformat_text": "YYYY-MM-DD",
-      "sales_prefix": "S",
-      "receiving_prefix": "P",
-      "invoice_prefix": "INV-",
-      "invoice_due_days": 30,
-      "invoice_terms": "Thank you for your business.",
-      "print_type": "thermal",
-      "print_size": "80mm",
-      "print_character": "42",
-      "bill_print_copies": 1,
-      "print_url": false,
-      "print_logoimg": true,
-      "print_sale_notes": true,
-      "customer_print": true,
-      "printall": false,
-      "roundOff": false,
-      "keyboard_view": false,
-      "stock_management": true,
-      "stock_management_log": true,
-      "table_options": false,
-      "cash_register_enable": true,
-      "enable_multi_payment": true,
-      "sale_quick_edit_enable": true,
-      "allow_sale_date_edit": true,
-      "allow_payment_correction": true,
-      "allow_sale_hard_delete": true,
-      "module_tax_enable": true,
-      "module_credit_enable": true,
-      "module_marketing_enable": true,
-      "module_messaging_enable": false,
-      "module_channels_enable": false,
-      "module_online_ordering_enable": false,
-      "module_kiosk_enable": false,
-      "module_captain_enable": false,
-      "module_mobile_pos_enable": false,
-      "module_billing_outlets_enable": false,
-      "module_delivery_partners_enable": false,
-      "module_webshop_enable": false,
-      "module_recyclebin_enable": true,
-      "module_demo_data_enable": false,
-      "module_themes_enable": true,
-      "module_cashbook_enable": true,
-      "quick_sale_enable": true,
-      "quotes_enable": true,
-      "invoices_enable": true,
-      "staff_shifts_enable": true,
-      "staff_roster_enable": true,
-      "staff_tips_enable": false,
-      "ai_enabled": false,
-      "ask_posnic_enabled": false,
-      "customer_checkbox": true,
-      "supplier_checkbox": true,
-      "tax_checkbox": true,
-      "default_customer": "665000000000000000000301",
-      "default_supplier": "665000000000000000000401",
-      "default_tax": "665000000000000000000501",
-      "tax_percentage": 0,
-      "discount_amount": "0",
-      "discount_percentage": "0",
-      "indian_gst": "gst_off",
-      "branch_gstin_number": "",
-      "notification_range": 5,
-      "sms_auto_send_time": "09:00 PM",
-      "sms_retry_period": "15",
-      "sms_max_retries": "3",
-      "payment_gateway": {
-        "status": "false",
-        "key": "",
-        "secret": ""
-      },
-      "phonepe_payment_gateway": {
-        "merchantId": "",
-        "saltKey": ""
-      },
-      "email_fields": [],
-      "register": [
-        {
-          "_id": "665000000000000000000021",
-          "register_name": "Main Counter Register"
-        }
-      ],
-      "header_print": "Macisla Main Store",
-      "footer_print": "Thank you for visiting Macisla! pos.macisla.com",
-      "regular_body_print": null,
-      "thermal_body_print": null,
-      "online_ordering": {
-        "store_id": "macisla",
-        "enabled": false
-      },
-      "first_run_done": true,
-      "first_run_decided": true,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z",
-      "print_a4html": "<div class=\"receipt-a4\" style=\"font-family:Arial,sans-serif;padding:16px;\">\n  <h3 class=\"print_store_name\" style=\"margin:0 0 4px;\">Macisla Main Store</h3>\n  <div class=\"print_store_address\" style=\"font-size:12px;color:#555;\">Jl. Senopati No. 88, Jakarta</div>\n  <hr/>\n  <div id=\"print_items_body\"></div>\n  <hr/>\n  <div class=\"footer-content\" style=\"text-align:center;font-size:12px;\">Thank you for visiting Macisla!</div>\n</div>",
-      "print_standard_html": "<div class=\"receipt-thermal\" style=\"font-family:monospace;width:80mm;padding:6px;\">\n  <div class=\"print_store_name\" style=\"text-align:center;font-weight:bold;font-size:15px;\">Macisla Main Store</div>\n  <div class=\"print_store_address\" style=\"text-align:center;font-size:11px;\">Jl. Senopati No. 88, Jakarta</div>\n  <hr style=\"border-top:1px dashed #000;\"/>\n  <div id=\"print_items_body\"></div>\n  <hr style=\"border-top:1px dashed #000;\"/>\n  <div class=\"footer-content\" style=\"text-align:center;font-size:11px;\">Thank you for visiting Macisla!</div>\n</div>"
-    }
+      registers: [],
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
+    },
   ],
-  "users": [
+  registers: [
     {
-      "_id": "665000000000000000000001",
-      "id": "665000000000000000000001",
-      "name": "admin",
-      "user_name": "admin",
-      "username": "admin",
-      "firstname": "Macisla",
-      "lastname": "Admin",
-      "email": "admin@macisla.com",
-      "phone": "+62 812-8888-9900",
-      "password": "admin",
-      "usertype": "super_admin",
-      "role": "super_admin",
-      "image": "user.svg",
-      "status": "Active",
-      "branch_id": [
-        "665000000000000000000010"
-      ],
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z",
-      "access": {
-        "dashboard": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "sales": {
-          "read": true,
-          "write": true,
-          "delete": true,
-          "session_filter": false
-        },
-        "item": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "category": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "customer": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "supplier": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "receiving": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "expense": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "user": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "branch": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "register": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "setting": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "report": {
-          "read": true,
-          "write": true,
-          "delete": false
-        },
-        "quote": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "invoice": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "coupon": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "tax": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "payment": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "unit": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "variant": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "stocklog": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "kot": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "pos": {
-          "discount": true,
-          "price_override": true,
-          "void_sale": true,
-          "refund_sale": true,
-          "open_drawer": true,
-          "discount_max_percent": 100
-        }
-      }
+      _id: DEFAULT_REGISTER_ID,
+      id: DEFAULT_REGISTER_ID,
+      register_id: DEFAULT_REGISTER_ID,
+      cash_register_id: DEFAULT_CASH_REGISTER_ID,
+      register_name: 'Main Counter Register',
+      branch_id: DEFAULT_BRANCH_ID,
+      branch_name: 'Macisla Main Store',
+      register_status: 'Opened',
+      opening_balance: 500000,
+      opened_at: SEED_TS,
+      opened_by: 'admin',
+      in_use: true,
+      in_use_by: 'admin',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
-    {
-      "_id": "665000000000000000000002",
-      "id": "665000000000000000000002",
-      "name": "manager",
-      "user_name": "manager",
-      "username": "manager",
-      "firstname": "Shop",
-      "lastname": "Manager",
-      "email": "manager@macisla.com",
-      "phone": "+62 812-8888-9901",
-      "password": "manager",
-      "usertype": "manager",
-      "role": "manager",
-      "image": "user.svg",
-      "status": "Active",
-      "branch_id": [
-        "665000000000000000000010"
-      ],
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z",
-      "access": {
-        "dashboard": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "sales": {
-          "read": true,
-          "write": true,
-          "delete": true,
-          "session_filter": false
-        },
-        "item": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "category": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "customer": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "supplier": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "receiving": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "expense": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "user": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "branch": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "register": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "setting": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "report": {
-          "read": true,
-          "write": true,
-          "delete": false
-        },
-        "quote": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "invoice": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "coupon": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "tax": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "payment": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "unit": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "variant": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "stocklog": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "kot": {
-          "read": true,
-          "write": true,
-          "delete": true
-        },
-        "pos": {
-          "discount": true,
-          "price_override": true,
-          "void_sale": true,
-          "refund_sale": true,
-          "open_drawer": true,
-          "discount_max_percent": 100
-        }
-      }
-    },
-    {
-      "_id": "665000000000000000000003",
-      "id": "665000000000000000000003",
-      "name": "cashier",
-      "user_name": "cashier",
-      "username": "cashier",
-      "firstname": "Front",
-      "lastname": "Cashier",
-      "email": "cashier@macisla.com",
-      "phone": "+62 812-8888-9902",
-      "password": "cashier",
-      "usertype": "cashier",
-      "role": "cashier",
-      "image": "user.svg",
-      "status": "Active",
-      "branch_id": [
-        "665000000000000000000010"
-      ],
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z",
-      "access": {
-        "dashboard": {
-          "read": true,
-          "write": true,
-          "delete": false
-        },
-        "sales": {
-          "read": true,
-          "write": true,
-          "delete": false,
-          "session_filter": false
-        },
-        "item": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "category": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "customer": {
-          "read": true,
-          "write": true,
-          "delete": false
-        },
-        "supplier": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "receiving": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "expense": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "user": {
-          "read": false,
-          "write": false,
-          "delete": false
-        },
-        "branch": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "register": {
-          "read": true,
-          "write": true,
-          "delete": false
-        },
-        "setting": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "report": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "quote": {
-          "read": true,
-          "write": true,
-          "delete": false
-        },
-        "invoice": {
-          "read": true,
-          "write": true,
-          "delete": false
-        },
-        "coupon": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "tax": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "payment": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "unit": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "variant": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "stocklog": {
-          "read": true,
-          "write": false,
-          "delete": false
-        },
-        "kot": {
-          "read": true,
-          "write": true,
-          "delete": false
-        },
-        "pos": {
-          "discount": true,
-          "price_override": false,
-          "void_sale": false,
-          "refund_sale": false,
-          "open_drawer": true,
-          "discount_max_percent": 20
-        }
-      }
-    }
   ],
-  "registers": [
+  taxes: [
     {
-      "_id": "665000000000000000000021",
-      "id": "665000000000000000000021",
-      "register_id": "665000000000000000000021",
-      "cash_register_id": "665000000000000000000020",
-      "register_name": "Main Counter Register",
-      "branch_id": "665000000000000000000010",
-      "branch_name": "Macisla Main Store",
-      "register_status": "Opened",
-      "opening_balance": 500000,
-      "opened_at": "2026-11-19T00:00:00.000Z",
-      "opened_by": "admin",
-      "in_use": true,
-      "in_use_by": "admin",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    }
+      _id: DEFAULT_TAX_ID,
+      id: DEFAULT_TAX_ID,
+      tax_id: DEFAULT_TAX_ID,
+      tax_name: 'No Tax (0%)',
+      tax_value: 0,
+      tax_type: 'Exclusive',
+      is_default: true,
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
+    },
+    {
+      _id: '665000000000000000000502',
+      id: '665000000000000000000502',
+      tax_id: '665000000000000000000502',
+      tax_name: 'PPN 11%',
+      tax_value: 11,
+      tax_type: 'Exclusive',
+      is_default: false,
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
+    },
+    {
+      _id: '665000000000000000000503',
+      id: '665000000000000000000503',
+      tax_id: '665000000000000000000503',
+      tax_name: 'Service 5%',
+      tax_value: 5,
+      tax_type: 'Inclusive',
+      is_default: false,
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
+    },
   ],
-  "taxes": [
+  payments: [
     {
-      "_id": "665000000000000000000501",
-      "id": "665000000000000000000501",
-      "tax_name": "No Tax (0%)",
-      "tax_value": 0,
-      "tax_type": "Exclusive",
-      "is_default": true,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: '665000000000000000000601',
+      id: '665000000000000000000601',
+      payment_value: 'Cash',
+      payment_name: 'Cash',
+      active: true,
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
     {
-      "_id": "665000000000000000000502",
-      "id": "665000000000000000000502",
-      "tax_name": "PPN 11%",
-      "tax_value": 11,
-      "tax_type": "Exclusive",
-      "is_default": false,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: '665000000000000000000602',
+      id: '665000000000000000000602',
+      payment_value: 'QRIS',
+      payment_name: 'QRIS',
+      active: true,
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
     {
-      "_id": "665000000000000000000503",
-      "id": "665000000000000000000503",
-      "tax_name": "Service 5%",
-      "tax_value": 5,
-      "tax_type": "Inclusive",
-      "is_default": false,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    }
+      _id: '665000000000000000000603',
+      id: '665000000000000000000603',
+      payment_value: 'Card',
+      payment_name: 'Card',
+      active: true,
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
+    },
+    {
+      _id: '665000000000000000000604',
+      id: '665000000000000000000604',
+      payment_value: 'Transfer',
+      payment_name: 'Bank Transfer',
+      active: true,
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
+    },
   ],
-  "payments": [
+  units: [
     {
-      "_id": "665000000000000000000601",
-      "id": "665000000000000000000601",
-      "payment_value": "Cash",
-      "payment_name": "Cash",
-      "active": true,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: '665000000000000000000701',
+      id: '665000000000000000000701',
+      unit_id: '665000000000000000000701',
+      unit_name: 'qty',
+      unit_short: 'qty',
+      unit_value: 'qty',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
     {
-      "_id": "665000000000000000000602",
-      "id": "665000000000000000000602",
-      "payment_value": "QRIS",
-      "payment_name": "QRIS",
-      "active": true,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: '665000000000000000000702',
+      id: '665000000000000000000702',
+      unit_id: '665000000000000000000702',
+      unit_name: 'pcs',
+      unit_short: 'pcs',
+      unit_value: 'pcs',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
     {
-      "_id": "665000000000000000000603",
-      "id": "665000000000000000000603",
-      "payment_value": "Card",
-      "payment_name": "Card",
-      "active": true,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: '665000000000000000000703',
+      id: '665000000000000000000703',
+      unit_id: '665000000000000000000703',
+      unit_name: 'session',
+      unit_short: 'session',
+      unit_value: 'session',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
     {
-      "_id": "665000000000000000000604",
-      "id": "665000000000000000000604",
-      "payment_value": "Transfer",
-      "payment_name": "Bank Transfer",
-      "active": true,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    }
+      _id: '665000000000000000000704',
+      id: '665000000000000000000704',
+      unit_id: '665000000000000000000704',
+      unit_name: 'bottle',
+      unit_short: 'bottle',
+      unit_value: 'bottle',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
+    },
+    {
+      _id: '665000000000000000000705',
+      id: '665000000000000000000705',
+      unit_id: '665000000000000000000705',
+      unit_name: 'box',
+      unit_short: 'box',
+      unit_value: 'box',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
+    },
+    {
+      _id: '665000000000000000000706',
+      id: '665000000000000000000706',
+      unit_id: '665000000000000000000706',
+      unit_name: 'kg',
+      unit_short: 'kg',
+      unit_value: 'kg',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
+    },
   ],
-  "units": [
+  denominations: [100000, 50000, 20000, 10000, 5000, 2000, 1000].map((v, i) => ({
+    _id: `66500000000000000000080${i + 1}`,
+    id: `66500000000000000000080${i + 1}`,
+    denom_value: String(v),
+    denomination: v,
+    value: v,
+    created_date: SEED_TS,
+    updated_date: SEED_TS,
+  })),
+  categories: [
     {
-      "_id": "665000000000000000000701",
-      "id": "665000000000000000000701",
-      "unit_name": "qty",
-      "unit_short": "qty",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: '665000000000000000000201',
+      id: '665000000000000000000201',
+      name: 'Haircuts & Grooming',
+      category_name: 'Haircuts & Grooming',
+      description: 'Haircuts, fades, styling, beard trims & hot towel treatments',
+      image: 'category.svg',
+      tile_color: '#2563EB',
+      tile_shape: 'rounded',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
     {
-      "_id": "665000000000000000000702",
-      "id": "665000000000000000000702",
-      "unit_name": "pcs",
-      "unit_short": "pcs",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: '665000000000000000000202',
+      id: '665000000000000000000202',
+      name: 'Hair Care Products',
+      category_name: 'Hair Care Products',
+      description: 'Pomades, matte clay, sea salt spray, beard oil & shampoo',
+      image: 'category.svg',
+      tile_color: '#0D9488',
+      tile_shape: 'rounded',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
     {
-      "_id": "665000000000000000000703",
-      "id": "665000000000000000000703",
-      "unit_name": "session",
-      "unit_short": "session",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: '665000000000000000000203',
+      id: '665000000000000000000203',
+      name: 'Beverages',
+      category_name: 'Beverages',
+      description: 'Specialty coffee, cold brew & refreshments',
+      image: 'category.svg',
+      tile_color: '#D97706',
+      tile_shape: 'rounded',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
     {
-      "_id": "665000000000000000000704",
-      "id": "665000000000000000000704",
-      "unit_name": "bottle",
-      "unit_short": "bottle",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: '665000000000000000000204',
+      id: '665000000000000000000204',
+      name: 'General',
+      category_name: 'General',
+      description: 'General retail items',
+      image: 'category.svg',
+      tile_color: '#64748B',
+      tile_shape: 'rounded',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
-    {
-      "_id": "665000000000000000000705",
-      "id": "665000000000000000000705",
-      "unit_name": "box",
-      "unit_short": "box",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000706",
-      "id": "665000000000000000000706",
-      "unit_name": "kg",
-      "unit_short": "kg",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    }
   ],
-  "denominations": [
+  suppliers: [
     {
-      "_id": "665000000000000000000801",
-      "id": "665000000000000000000801",
-      "denom_value": "100000",
-      "denomination": 100000,
-      "value": 100000,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: DEFAULT_SUPPLIER_ID,
+      id: DEFAULT_SUPPLIER_ID,
+      name: 'Macisla Supply Co.',
+      supplier_name: 'Macisla Supply Co.',
+      company_name: 'Macisla Supply Co.',
+      phone: '+62 21-555-0199',
+      email: 'supply@macisla.com',
+      address: 'Jl. Kemang Raya No. 12, Jakarta',
+      city: 'Jakarta',
+      state: 'DKI Jakarta',
+      country: 'Indonesia',
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
-    {
-      "_id": "665000000000000000000802",
-      "id": "665000000000000000000802",
-      "denom_value": "50000",
-      "denomination": 50000,
-      "value": 50000,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000803",
-      "id": "665000000000000000000803",
-      "denom_value": "20000",
-      "denomination": 20000,
-      "value": 20000,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000804",
-      "id": "665000000000000000000804",
-      "denom_value": "10000",
-      "denomination": 10000,
-      "value": 10000,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000805",
-      "id": "665000000000000000000805",
-      "denom_value": "5000",
-      "denomination": 5000,
-      "value": 5000,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000806",
-      "id": "665000000000000000000806",
-      "denom_value": "2000",
-      "denomination": 2000,
-      "value": 2000,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000807",
-      "id": "665000000000000000000807",
-      "denom_value": "1000",
-      "denomination": 1000,
-      "value": 1000,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    }
   ],
-  "categories": [
+  customers: [
     {
-      "_id": "665000000000000000000201",
-      "id": "665000000000000000000201",
-      "name": "Haircuts & Grooming",
-      "category_name": "Haircuts & Grooming",
-      "description": "Haircuts, fades, styling, beard trims & hot towel treatments",
-      "image": "category.svg",
-      "tile_color": "#2563EB",
-      "tile_shape": "rounded",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
+      _id: DEFAULT_CUSTOMER_ID,
+      id: DEFAULT_CUSTOMER_ID,
+      name: 'Walk-in Customer',
+      customer_name: 'Walk-in Customer',
+      phone: '0000000000',
+      email: 'walkin@macisla.com',
+      address: 'Jakarta',
+      city: 'Jakarta',
+      state: 'DKI Jakarta',
+      country: 'Indonesia',
+      customer_balance: 0,
+      wallet_amount: 0,
+      partial_balance: 0,
+      is_default: true,
+      created_date: SEED_TS,
+      updated_date: SEED_TS,
     },
-    {
-      "_id": "665000000000000000000202",
-      "id": "665000000000000000000202",
-      "name": "Hair Care Products",
-      "category_name": "Hair Care Products",
-      "description": "Pomades, matte clay, sea salt spray, beard oil & shampoo",
-      "image": "category.svg",
-      "tile_color": "#0D9488",
-      "tile_shape": "rounded",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000203",
-      "id": "665000000000000000000203",
-      "name": "Beverages",
-      "category_name": "Beverages",
-      "description": "Specialty coffee, cold brew & refreshments",
-      "image": "category.svg",
-      "tile_color": "#D97706",
-      "tile_shape": "rounded",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000204",
-      "id": "665000000000000000000204",
-      "name": "General",
-      "category_name": "General",
-      "description": "General retail items",
-      "image": "category.svg",
-      "tile_color": "#64748B",
-      "tile_shape": "rounded",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    }
   ],
-  "suppliers": [
+  items: [
     {
-      "_id": "665000000000000000000401",
-      "id": "665000000000000000000401",
-      "name": "Macisla Supply Co.",
-      "supplier_name": "Macisla Supply Co.",
-      "company_name": "Macisla Supply Co.",
-      "phone": "+62 21-555-0199",
-      "email": "supply@macisla.com",
-      "address": "Jl. Kemang Raya No. 12, Jakarta",
-      "city": "Jakarta",
-      "state": "DKI Jakarta",
-      "country": "Indonesia",
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    }
+      id: '665000000000000000000101',
+      sku: 'MCS-001',
+      barcode: '8990001000017',
+      name: 'The Essential (The AI Precision Cut)',
+      price: 100000,
+      color: '#2563EB',
+    },
+    {
+      id: '665000000000000000000102',
+      sku: 'MCS-002',
+      barcode: '8990001000024',
+      name: 'The Signature (The Complete Atelier Cut)',
+      price: 130000,
+      color: '#0D9488',
+    },
+    {
+      id: '665000000000000000000103',
+      sku: 'MCS-003',
+      barcode: '8990001000031',
+      name: 'The VIP Ritual (The Executive Protocol)',
+      price: 150000,
+      color: '#7C3AED',
+    },
+  ].map((s) => ({
+    _id: s.id,
+    id: s.id,
+    name: s.name,
+    item_name: s.name,
+    itemid: s.sku,
+    barcode_id: s.barcode,
+    category_id: '665000000000000000000201',
+    category_name: 'Haircuts & Grooming',
+    supplier_id: DEFAULT_SUPPLIER_ID,
+    supplier_name: 'Macisla Supply Co.',
+    selling_price: s.price,
+    mrp_price: s.price,
+    company_price: 0,
+    available_quantity: 99,
+    low_stock: 5,
+    track_inventory: false,
+    inventory: false,
+    negative_stock: true,
+    available_for_sale: true,
+    item_kind: 'service',
+    service_unit: 'fixed',
+    unit: 'session',
+    unit_id: '665000000000000000000703',
+    tax: 0,
+    tax_id: DEFAULT_TAX_ID,
+    tax_name: 'No Tax (0%)',
+    tax_type: 'exclusive',
+    discount_amount: 0,
+    discount_percentage: 0,
+    multi_image: [],
+    image: 'item.svg',
+    cover_image: 'item.svg',
+    tile_color: s.color,
+    tile_shape: 'rounded',
+    description: '',
+    tags: [],
+    barcodes: [],
+    selling_units: [],
+    stock_locations: [],
+    branch_id: DEFAULT_BRANCH_ID,
+    status: 'Active',
+    created_by: 'admin',
+    created_date: SEED_TS,
+    updated_date: SEED_TS,
+  })),
+  meta: [
+    { _id: 'stock_preference', preference: 'track' },
+    {
+      _id: 'theme',
+      theme: 'light',
+      theme_name: 'default',
+      primary_color: '#506fe4',
+      updated_date: SEED_TS,
+    },
   ],
-  "customers": [
-    {
-      "_id": "665000000000000000000301",
-      "id": "665000000000000000000301",
-      "name": "Walk-in Customer",
-      "customer_name": "Walk-in Customer",
-      "phone": "0000000000",
-      "email": "walkin@macisla.com",
-      "address": "Jakarta",
-      "city": "Jakarta",
-      "state": "DKI Jakarta",
-      "country": "Indonesia",
-      "customer_balance": 0,
-      "wallet_amount": 0,
-      "partial_balance": 0,
-      "is_default": true,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000302",
-      "id": "665000000000000000000302",
-      "name": "Andi Pratama",
-      "customer_name": "Andi Pratama",
-      "phone": "+62 812-1111-2233",
-      "email": "andi@example.com",
-      "address": "Jl. Dharmawangsa No. 4, Jakarta",
-      "city": "Jakarta",
-      "state": "DKI Jakarta",
-      "country": "Indonesia",
-      "customer_balance": 0,
-      "wallet_amount": 0,
-      "partial_balance": 0,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000303",
-      "id": "665000000000000000000303",
-      "name": "Budi Santoso",
-      "customer_name": "Budi Santoso",
-      "phone": "+62 813-4444-5566",
-      "email": "budi@example.com",
-      "address": "Jl. Gunawarman No. 19, Jakarta",
-      "city": "Jakarta",
-      "state": "DKI Jakarta",
-      "country": "Indonesia",
-      "customer_balance": 0,
-      "wallet_amount": 0,
-      "partial_balance": 0,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    },
-    {
-      "_id": "665000000000000000000304",
-      "id": "665000000000000000000304",
-      "name": "Rina Kusuma",
-      "customer_name": "Rina Kusuma",
-      "phone": "+62 811-7777-8899",
-      "email": "rina@example.com",
-      "address": "SCBD Lot 8, Jakarta",
-      "city": "Jakarta",
-      "state": "DKI Jakarta",
-      "country": "Indonesia",
-      "customer_balance": 0,
-      "wallet_amount": 0,
-      "partial_balance": 0,
-      "created_date": "2026-11-19T00:00:00.000Z",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    }
-  ],
-  "items": [
-    {
-      "_id": "665000000000000000000101",
-      "id": "665000000000000000000101",
-      "name": "The Essential (The AI Precision Cut)",
-      "item_name": "The Essential (The AI Precision Cut)",
-      "itemid": "MCS-001",
-      "barcode_id": "8990001000017",
-      "category_id": "665000000000000000000201",
-      "category_name": "Haircuts & Grooming",
-      "supplier_id": "665000000000000000000401",
-      "supplier_name": "Macisla Supply Co.",
-      "selling_price": 100000,
-      "mrp_price": 100000,
-      "company_price": 0,
-      "available_quantity": 99,
-      "low_stock": 5,
-      "track_inventory": false,
-      "negative_stock": true,
-      "available_for_sale": true,
-      "item_kind": "service",
-      "unit": "session",
-      "tax": 0,
-      "tax_type": "Exclusive",
-      "tax_name": "No Tax (0%)",
-      "discount_amount": 0,
-      "discount_percentage": 0,
-      "image": "item.svg",
-      "tile_color": "#2563EB",
-      "tile_shape": "rounded",
-      "branch_id": "665000000000000000000010",
-      "status": "Active",
-      "created_by": "admin",
-      "created_date": "2026-11-19T09:59:03.635Z",
-      "updated_date": "2026-11-19T09:59:03.635Z"
-    },
-    {
-      "_id": "665000000000000000000102",
-      "id": "665000000000000000000102",
-      "name": "The Signature (The Complete Atelier Cut)",
-      "item_name": "The Signature (The Complete Atelier Cut)",
-      "itemid": "MCS-002",
-      "barcode_id": "8990001000024",
-      "category_id": "665000000000000000000201",
-      "category_name": "Haircuts & Grooming",
-      "supplier_id": "665000000000000000000401",
-      "supplier_name": "Macisla Supply Co.",
-      "selling_price": 130000,
-      "mrp_price": 130000,
-      "company_price": 0,
-      "available_quantity": 99,
-      "low_stock": 5,
-      "track_inventory": false,
-      "negative_stock": true,
-      "available_for_sale": true,
-      "item_kind": "service",
-      "unit": "session",
-      "tax": 0,
-      "tax_type": "Exclusive",
-      "tax_name": "No Tax (0%)",
-      "discount_amount": 0,
-      "discount_percentage": 0,
-      "image": "item.svg",
-      "tile_color": "#0D9488",
-      "tile_shape": "rounded",
-      "branch_id": "665000000000000000000010",
-      "status": "Active",
-      "created_by": "admin",
-      "created_date": "2026-11-19T09:59:03.635Z",
-      "updated_date": "2026-11-19T09:59:03.635Z"
-    },
-    {
-      "_id": "665000000000000000000103",
-      "id": "665000000000000000000103",
-      "name": "The VIP Ritual (The Executive Protocol)",
-      "item_name": "The VIP Ritual (The Executive Protocol)",
-      "itemid": "MCS-003",
-      "barcode_id": "8990001000031",
-      "category_id": "665000000000000000000201",
-      "category_name": "Haircuts & Grooming",
-      "supplier_id": "665000000000000000000401",
-      "supplier_name": "Macisla Supply Co.",
-      "selling_price": 150000,
-      "mrp_price": 150000,
-      "company_price": 0,
-      "available_quantity": 99,
-      "low_stock": 5,
-      "track_inventory": false,
-      "negative_stock": true,
-      "available_for_sale": true,
-      "item_kind": "service",
-      "unit": "session",
-      "tax": 0,
-      "tax_type": "Exclusive",
-      "tax_name": "No Tax (0%)",
-      "discount_amount": 0,
-      "discount_percentage": 0,
-      "image": "item.svg",
-      "tile_color": "#7C3AED",
-      "tile_shape": "rounded",
-      "branch_id": "665000000000000000000010",
-      "status": "Active",
-      "created_by": "admin",
-      "created_date": "2026-11-19T09:59:03.635Z",
-      "updated_date": "2026-11-19T09:59:03.635Z"
-    }
-  ],
-  "meta": [
-    {
-      "_id": "stock_preference",
-      "preference": "track"
-    },
-    {
-      "_id": "theme",
-      "theme": "light",
-      "theme_name": "default",
-      "primary_color": "#506fe4",
-      "updated_date": "2026-11-19T00:00:00.000Z"
-    }
-  ]
 };
-
-export const SEED_VERSION = computeSeedVersion(SEED_DATA);

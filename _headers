@@ -1,3 +1,24 @@
+/
+  Cache-Control: no-store
+
+/index.html
+  Cache-Control: no-store
+
+/dashboard
+  Cache-Control: no-store
+
+/dashboard.html
+  Cache-Control: no-store
+
+/login
+  Cache-Control: no-store
+
+/login.html
+  Cache-Control: no-store
+
+/static/macisla-boot.js
+  Cache-Control: no-store
+
 /robots.txt
   Content-Type: text/plain; charset=utf-8
   Cache-Control: public, max-age=3600

@@ -1,4 +1,4 @@
-// Local development server for Macisla_POS (serves 100% original Posnic frontend + D1-compatible SQLite backend)
+// Local development server for Macisla POS (serves Posnic frontend + D1-compatible SQLite backend).
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,42 +36,66 @@ const MIME = {
   '.wav': 'audio/wav',
 };
 
+const BLOCKED_FILES = new Set([
+  '/server.js',
+  '/storage.js',
+  '/posnic-engine.mjs',
+  '/seed-data.mjs',
+  '/package.json',
+  '/wrangler.toml',
+  '/schema.sql',
+  '/_routes.json',
+  '/_headers',
+]);
+
 function resolveStaticFile(urlPath) {
   let clean = decodeURIComponent(urlPath.split('?')[0]);
   if (clean === '/' || clean === '') clean = '/index.html';
+  else if (clean === '/dashboard') clean = '/dashboard.html';
   if (clean.startsWith('/public/')) clean = clean.slice('/public'.length);
 
-  // Never expose backend files or data directory over HTTP
-  const blocked = ['/server.js', '/storage.js', '/posnic-engine.mjs', '/seed-data.mjs', '/package.json', '/wrangler.toml', '/schema.sql', '/_routes.json'];
-  if (blocked.includes(clean) || clean.startsWith('/functions/') || clean.startsWith('/data/') || clean.startsWith('/test/') || clean.startsWith('/.git')) {
+  if (
+    BLOCKED_FILES.has(clean) ||
+    clean.startsWith('/functions/') ||
+    clean.startsWith('/data/') ||
+    clean.startsWith('/test/') ||
+    clean.startsWith('/.git')
+  ) {
     return null;
   }
 
   const candidate = path.resolve(__dirname, '.' + clean);
   if (!candidate.startsWith(__dirname)) return null;
-  if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-    return candidate;
-  }
-  return null;
+  return fs.existsSync(candidate) && fs.statSync(candidate).isFile() ? candidate : null;
 }
 
-export function startServer({ port = PORT, host = HOST, dataDir = DATA_DIR, seedFilePath = null } = {}) {
-  const store = createLocalStore(dataDir, { seedFilePath });
+export function startServer({ port = PORT, host = HOST, dataDir = DATA_DIR } = {}) {
+  const store = createLocalStore(dataDir);
 
   const server = http.createServer(async (req, res) => {
     try {
       const method = (req.method || 'GET').toUpperCase();
       const rawUrl = req.url || '/';
+      const cleanPath = rawUrl.split('?')[0];
+
+      if (cleanPath === '/login' || cleanPath === '/login.html') {
+        res.writeHead(302, { location: '/dashboard#/sales/new', 'cache-control': 'no-store' });
+        return res.end();
+      }
 
       if (method === 'GET' || method === 'HEAD') {
         const staticFile = resolveStaticFile(rawUrl);
         if (staticFile) {
+          if (cleanPath === '/dashboard' || cleanPath === '/dashboard.html') {
+            const html = fs.readFileSync(staticFile, 'utf8').replace(/<head([^>]*)>/i, '<head$1>\n<script src="/static/macisla-boot.js"></script>');
+            res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+            return res.end(method === 'HEAD' ? undefined : html);
+          }
           const ext = path.extname(staticFile).toLowerCase();
-          const headers = {
+          res.writeHead(200, {
             'content-type': MIME[ext] || 'application/octet-stream',
-            'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=3600',
-          };
-          res.writeHead(200, headers);
+            'cache-control': ext === '.html' || cleanPath === '/static/macisla-boot.js' ? 'no-store' : 'public, max-age=3600',
+          });
           if (method === 'HEAD') return res.end();
           return fs.createReadStream(staticFile).pipe(res);
         }
@@ -80,9 +104,7 @@ export function startServer({ port = PORT, host = HOST, dataDir = DATA_DIR, seed
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const bodyBuf = Buffer.concat(chunks);
-
-      const fullUrl = `http://${req.headers.host || `${host}:${port}`}${rawUrl}`;
-      const webReq = new Request(fullUrl, {
+      const webReq = new Request(`http://${req.headers.host || `${host}:${port}`}${rawUrl}`, {
         method,
         headers: req.headers,
         body: method === 'GET' || method === 'HEAD' || bodyBuf.length === 0 ? undefined : bodyBuf,
@@ -94,8 +116,7 @@ export function startServer({ port = PORT, host = HOST, dataDir = DATA_DIR, seed
         outHeaders[k] = v;
       });
       res.writeHead(webRes.status, outHeaders);
-      const ab = await webRes.arrayBuffer();
-      res.end(Buffer.from(ab));
+      res.end(Buffer.from(await webRes.arrayBuffer()));
     } catch (err) {
       console.error('[Macisla_POS]', err);
       res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
@@ -108,8 +129,8 @@ export function startServer({ port = PORT, host = HOST, dataDir = DATA_DIR, seed
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { server } = startServer({ seedFilePath: path.join(__dirname, 'seed-data.mjs') });
+  const { server } = startServer();
   server.listen(PORT, HOST, () => {
-    console.log(`Macisla_POS (Original Posnic UI + Cloudflare D1/R2 Adapter + Auto Seed Sync) listening on http://${HOST}:${PORT}`);
+    console.log(`Macisla POS listening on http://${HOST}:${PORT}`);
   });
 }
